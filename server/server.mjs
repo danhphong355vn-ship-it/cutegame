@@ -34,7 +34,12 @@ const publicHome = account => {
     // The cottage's trophy shelf and paintings, for visitors (cooldown stamps stay private).
     bosses: Array.isArray(source.bosses) ? source.bosses : [], house: { paintings: Number.isSafeInteger(source.house?.paintings) ? source.house.paintings : 0 } };
 };
-const send = (socket, payload) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload)); };
+const send = (socket, payload) => {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  // If the network is lagging, drop heavy sync frames so essential health/combat packets get through.
+  if (socket.bufferedAmount > 65536 && payload.type === 'enemies') return;
+  socket.send(JSON.stringify(payload));
+};
 const failure = (status, message) => Object.assign(new Error(message), { status });
 export async function createGameServer(options = {}) {
   const host = options.host || process.env.HOST || '127.0.0.1';
