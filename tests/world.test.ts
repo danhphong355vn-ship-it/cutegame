@@ -360,3 +360,16 @@ test('incremental remote pose updates retain transformations until an explicit v
  assert.equal(remote.mesh.scale.x,HERO_SCALE*2);assert.equal(remote.mesh.userData.statusOpacity,.25);assert.equal(remote.mesh.getObjectByName('status-shield')!.visible,true);assert.equal(remote.mesh.position.y,2);assert.equal(remote.mesh.rotation.y,1);
  w.updateRemotePlayer('friend',{x:4,z:5,visual:{size:1,stealth:false,shield:false}});assert.equal(remote.mesh.scale.x,HERO_SCALE);assert.equal(remote.mesh.userData.statusOpacity,1);assert.equal(remote.mesh.getObjectByName('status-shield')!.visible,false);
 });
+
+test('remote explorers move between network poses smoothly, but teleport across distant jumps',()=>{
+ const w=world();w.addRemotePlayer('friend',{x:0,z:0,facing:0,moving:true});const remote=w.remotePlayers.get('friend')!;
+ w.updateRemotePlayer('friend',{x:2,z:0,facing:Math.PI/2});
+ assert.equal(remote.mesh.position.x,0,'a packet must not snap the visible avatar');
+ (w as unknown as {animateRemotes(dt:number):void}).animateRemotes(.025);
+ assert.ok(remote.mesh.position.x>0&&remote.mesh.position.x<2);
+ assert.ok(remote.mesh.rotation.y>0&&remote.mesh.rotation.y<Math.PI/2);
+ for(let i=0;i<20;i++)(w as unknown as {animateRemotes(dt:number):void}).animateRemotes(.025);
+ assert.ok(Math.abs(remote.mesh.position.x-2)<.01);
+ w.updateRemotePlayer('friend',{x:30,z:0});
+ assert.equal(remote.mesh.position.x,30,'a teleport should not drift across the map');
+});

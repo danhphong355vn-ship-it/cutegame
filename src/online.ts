@@ -10,7 +10,7 @@ interface Explorer { id:string;username?:string;name:string;color:string;level:n
 interface Home extends Explorer { discovered?:PlanetId[]; plots:SaveState['plots'];farm?:SaveState['farm'];placed?:unknown[];decorations?:unknown[];helper?:unknown;friends?:unknown[] }
 interface EnemyState { id:string;x:number;z:number;hp:number;maxHp:number;[key:string]:unknown }
 interface NetworkWorld {
-  updateRemotePlayers(players:Explorer[]):void;clearRemotePlayers():void;
+  updateRemotePlayers(players:Explorer[]):void;clearRemotePlayers():void;playRemoteAction(id:string,action:'basic'|'skill',index?:number):void;
   setNetworkRole(role:'host'|'peer'|null):void;
   /** The host's difficulty while someone else hosts the room (creature scale, the Settings note); null otherwise. */
   roomDifficulty:Difficulty|null;
@@ -231,7 +231,7 @@ export function initOnline(game:GameBridge) {
         if(message.home){const home=message.home as Home;const state={...newGame(home.name,home.color),discovered:home.discovered??['home'],plots:home.plots,gear:home.gear,...(home.farm?{farm:home.farm}:{}),...(home.placed?{placed:home.placed}:{}),...(home.decorations?{decorations:home.decorations}:{}),...(home.helper?{helper:home.helper}:{}),...(home.friends?{friends:home.friends}:{})};game.setVisiting(home.name,state as SaveState);}
         else game.setVisiting(null);renderPlayers();announce(visiting?"Visiting {name}'s garden":'Back in your garden',{name:message.home?.name||''});if(dialog.open)render();
       }else if(message.type==='home'&&message.home?.id===visiting)game.setVisiting(message.home.name,{discovered:message.home.discovered,plots:message.home.plots,decorations:message.home.decorations,farm:message.home.farm,helper:message.home.helper,friends:message.home.friends} as Partial<SaveState>);
-      else if(message.type==='effect'){if(message.visual)game.applyRemoteEffect(message.visual);else world().burst(message.x,message.z,message.color,8);}
+      else if(message.type==='effect'){if(message.visual)game.applyRemoteEffect(message.visual);else{if(typeof message.by==='string'&&(message.action==='basic'||message.action==='skill'))world().playRemoteAction(message.by,message.action,message.index);world().burst(message.x,message.z,message.color,8);}}
       else if(message.type==='party'){party=message.code;announce('Party code: {code}',{code:party||''});if(dialog.open)render();}
       else if(message.type==='error'){if(chatMatches(message.requestId,connection))releaseChat();if(!message.requestId){chatReady=!!chatRoom&&connection.readyState===WebSocket.OPEN;refreshChatControls();}if(restoring&&fallbackJoin){desiredParty=null;restoring=false;joined(fallbackJoin);}announce(message.message||'That action was unavailable.');}
     });
@@ -303,7 +303,7 @@ export function initOnline(game:GameBridge) {
     // damage and rewards with canonical combat values before relaying the snapshot.
     if(host===account.id&&enemyClock>=.15){enemyClock=0;send({type:'enemies',enemies:world().enemySnapshots()});}
   });
-  game.onAction(action=>{if(!account)return;if(action.kind==='basic')send({type:'basic',targetId:action.targetId,requestId:crypto.randomUUID()});else if(action.kind==='skill')send({type:'skill',index:action.index,requestId:crypto.randomUUID()});if(account)send({type:'effect',effect:action.special||action.kind,visual:action.effect,x:action.x,z:action.z,color:action.kind==='skill'?'#d1a6ff':'#fff2a0'});});
+  game.onAction(action=>{if(!account)return;if(action.kind==='basic')send({type:'basic',targetId:action.targetId,requestId:crypto.randomUUID()});else if(action.kind==='skill')send({type:'skill',index:action.index,requestId:crypto.randomUUID()});send({type:'effect',action:action.kind,index:action.index,effect:action.special||action.kind,visual:action.effect,x:action.x,z:action.z,color:action.kind==='skill'?'#d1a6ff':'#fff2a0'});});
   document.addEventListener('visibilitychange',()=>{send({type:'active',active:!document.hidden});if(document.hidden)void flushSave();});
   window.addEventListener('pagehide',rememberActions);
   onLanguageChange(()=>{

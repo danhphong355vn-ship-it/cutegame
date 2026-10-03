@@ -360,8 +360,8 @@ export async function createGameServer(options = {}) {
         } else if(message.type==='damage'&&room?.host===account.id&&room.members.has(message.id)){
           const target=peers.get(message.id);if(target)combatAuthority.damage(target,text(message.enemyId,100),message.source==='shot'?'shot':'melee');
         } else if (message.type === 'effect' && room) {
-          const visual=message.visual,cleanVisual=visual&&['arc','ring','impact','trail','beam','cast'].includes(visual.kind)?{kind:visual.kind,x:number(visual.x),z:number(visual.z),radius:number(visual.radius,1,0,40),facing:number(visual.facing,0,-100,100),duration:number(visual.duration,.4,0,5),...(Number.isFinite(visual.arc)?{arc:number(visual.arc,2.2,0,6.3)}:{}),...(Number.isFinite(visual.width)?{width:number(visual.width,.65,.05,4)}:{}),...(EFFECT_LOOKS.includes(visual.look)?{look:visual.look}:{}),color:/^#[a-f0-9]{6}$/i.test(visual.color)?visual.color:'#fff2a0'}:null;
-          broadcast(room, { type: 'effect', visual:cleanVisual, by: account.id, effect: text(message.effect, 30), x: number(message.x), z: number(message.z), color: /^#[a-f0-9]{6}$/i.test(message.color) ? message.color : '#fff2a0' }, account.id);
+          const visual=message.visual,cleanVisual=visual&&['arc','ring','impact','trail','beam','cast','toss'].includes(visual.kind)?{kind:visual.kind,x:number(visual.x),z:number(visual.z),radius:number(visual.radius,1,0,40),facing:number(visual.facing,0,-100,100),duration:number(visual.duration,.4,0,5),...(Number.isFinite(visual.arc)?{arc:number(visual.arc,2.2,0,6.3)}:{}),...(Number.isFinite(visual.width)?{width:number(visual.width,.65,.05,4)}:{}),...(EFFECT_LOOKS.includes(visual.look)?{look:visual.look}:{}),color:/^#[a-f0-9]{6}$/i.test(visual.color)?visual.color:'#fff2a0'}:null;
+          broadcast(room, { type: 'effect', visual:cleanVisual, by: account.id, action:message.action==='basic'||message.action==='skill'?message.action:null,index:Number.isInteger(message.index)&&message.index>=0&&message.index<=3?message.index:null,effect: text(message.effect, 30), x: number(message.x), z: number(message.z), color: /^#[a-f0-9]{6}$/i.test(message.color) ? message.color : '#fff2a0' }, account.id);
         }
       } catch (error) { send(socket, { type: 'error', ...(requestId ? { requestId } : {}), message: error.status ? error.message : 'That action could not be completed.' }); }
     });
@@ -404,7 +404,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     process.exitCode = 1;
   }
 }
-
 
 
 
