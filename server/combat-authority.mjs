@@ -293,5 +293,6 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     const now = Date.now();
     return [...state(room).enemies.values()].filter(e => e.hp < e.maxHp || e.phase !== 'idle' || e.combatAttacks?.length > 0 || (e.deadUntil && e.deadUntil > now) || (now - e.changedAt) < 3000).map(snapshot);
   }
+  function bomb(peer,radius,multiplier){const room=rooms.get(peer.room);if(!room||peer.visit)return;for(const enemy of state(room).enemies.values())if(enemy.hp>0&&dist(peer.pose,enemy)<=radius+enemy.radius)hit(peer,enemy,{amount:Math.round(Game.attack(combatProfile(peer))*multiplier),critical:false,stun:.5,lift:0,knock:2,direction:{x:0,z:0}});}
   return {acceptSnapshots,activeSnapshots,basic,skill,damage,bomb,engineFor,state,internal,resetPeer,flushPeerHealth,async close(){stopped=true;clearInterval(timer);for(const engine of engines.values())flushHealth(engine);await Promise.allSettled([...queues.values()]);}};
 }
