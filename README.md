@@ -45,11 +45,11 @@ Online players share the wild areas, enemies, boss attacks and world events. Gar
 
 For two-player testing on one computer, use separate browser profiles or a normal window and a private window, and create different accounts. This build was also exercised with separate localhost hostnames.
 
-For local development without `DATABASE_URL`, the server stores accounts in `data/accounts.json`, excluded from source control. Back up that file to retain local account progress. With `DATABASE_URL`, account credentials, profiles, save revisions, friends, and friend requests persist in PostgreSQL. The Render configuration requires Neon and fails startup if the database is missing or unavailable. Browser offline saves remain in that browser's local storage. Online actions use revisions and immutable request IDs; durable receipts make retries safe without uploading a client save. Identical retries return the original action result with the current canonical profile.
+For local development without `DATABASE_URL`, the server stores accounts in `data/accounts.json`, excluded from source control. Back up that file to retain local account progress. With `DATABASE_URL`, account credentials, profiles, save revisions, friends, and friend requests persist in PostgreSQL. The Render configuration requires a reachable PostgreSQL database and fails startup if it is missing or unavailable. Browser offline saves remain in that browser's local storage. Online actions use revisions and immutable request IDs; durable receipts make retries safe without uploading a client save. Identical retries return the original action result with the current canonical profile.
 
 Restarting the server clears sign-in sessions, parties, chat history, and active rooms; players sign in again to resume their saved account progress. Run one server instance because live sessions and rooms are held in memory.
 
-The default server listens only on this computer. [`render.yaml`](render.yaml) and the [Render + Neon deployment guide](docs/multiplayer-deployment.md) prepare one free HTTPS service for the complete game, account API, and WebSockets. Automatic code deploys are off, and the database connection is supplied privately in Render. The configuration does not create or deploy any remote resources by itself. When deployed, players open the new Render address; GitHub Pages remains the separate solo edition.
+The default server listens only on this computer. [`render.yaml`](render.yaml) and the [Render + Supabase deployment guide](docs/multiplayer-deployment.md) prepare one free HTTPS service for the complete game, account API, and WebSockets. Automatic code deploys are off, and the database connection is supplied privately in Render. The configuration does not create or deploy any remote resources by itself. When deployed, players open the new Render address; a GitHub Pages site remains a separate solo edition.
 
 Copy `.env.example` to `.env` for local database settings. `npm run db:check` checks the PostgreSQL connection; `npm run db:import -- --path "C:\path\accounts.json"` explicitly imports a legacy account file into an empty PostgreSQL destination. See the deployment guide before importing. Never put database credentials in a `VITE_*` variable.
 
@@ -78,13 +78,13 @@ The dense worlds stay light: repeated scenery is drawn as instances in 64 m tile
 
 ## GitHub Pages edition
 
-Play the [solo browser edition](https://buicongnguyen.github.io/cute_game/). The full source is available in the [public GitHub repository](https://github.com/buicongnguyen/cute_game).
+This repository contains a solo browser edition that can be published through GitHub Pages. The full source is available in the [public GitHub repository](https://github.com/danhphong355vn-ship-it/cutegame).
 
 ```sh
 npm run build:pages
 ```
 
-This creates only the playable static files in `dist/`, with the `/cute_game/` path prefix. It includes farming, fishing, combat, all worlds and progression, original runtime models, browser saves and offline installation. The Pages interface clearly identifies solo play. Accounts, friends, chat and shared worlds require the Node/WebSocket service and remain available with `npm run dev`, `npm start`, or the prepared [Render + Neon deployment](docs/multiplayer-deployment.md); GitHub Pages cannot run that service.
+This creates only the playable static files in `dist/`, with the `/cute_game/` path prefix by default. The Pages workflow uses this repository's name, `/cutegame/`, when it publishes. It includes farming, fishing, combat, all worlds and progression, original runtime models, browser saves and offline installation. The Pages interface clearly identifies solo play. Accounts, friends, chat and shared worlds require the Node/WebSocket service and remain available with `npm run dev`, `npm start`, or the prepared [Render + Supabase deployment](docs/multiplayer-deployment.md); GitHub Pages cannot run that service.
 
 The Pages workflow runs all tests before publishing `dist/` from `main`. Source files, editable Blender artwork and account data are not included in the website artifact. `VITE_BASE_PATH` can override the deployment directory; the normal build remains rooted at `/`.
 
