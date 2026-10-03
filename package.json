@@ -7,7 +7,7 @@
     "dev": "node --env-file-if-exists=.env server/start-dev.mjs",
     "build": "tsc --noEmit && vite build && node server/build-offline.mjs",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
+    "test": "node --no-experimental-global-navigator --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts tests/*.test.mjs",
     "dev:client": "vite --host 127.0.0.1",
     "start": "node --env-file-if-exists=.env server/server.mjs",
     "build:pages": "node server/build-pages.mjs",

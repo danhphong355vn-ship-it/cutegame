@@ -10,6 +10,7 @@ import {EnvironmentSimulation,createEnvironmentLayout} from '../src/environments
 import {lavaEvent} from '../src/lava-weather.ts';
 import {beginTitanAttack,titanTelegraphs} from '../src/titan-patterns.ts';
 import {FOREST_RAPTOR_COUNT} from '../src/enemy-types.ts';
+import {t} from '../src/i18n.ts';
 
 // Exercise actual world behavior with real Three objects; only WebGL is omitted.
 function world() {
@@ -228,7 +229,7 @@ test('fire crystal and obsidian deposits require their own strike counts and per
   const w=world();w.planet='lava';w.environment=new EnvironmentSimulation(createEnvironmentLayout('lava'));
   for(const [kind,item,hits] of [['fire-crystal','fcrystal',2],['obsidian-ore','obsidian',4],['magma-ore','mcrystal',3]] as const){
     const entity=w.addEntity(kind,'Ore','',new T.Group(),20,0,1),before=w.state.bag[item]??0;
-    for(let hit=1;hit<hits;hit++){assert.match(w.interactEnvironment(entity)!.message,/Mining/);assert.equal(w.state.bag[item]??0,before);}
+    for(let hit=1;hit<hits;hit++){assert.equal(w.interactEnvironment(entity)!.message,t('Mining {count}/{total} strikes.',{count:hit,total:hits}));assert.equal(w.state.bag[item]??0,before);}
     w.interactEnvironment(entity);const count=w.state.bag[item]-before;assert.ok(count>=(kind==='magma-ore'?2:1)&&count<=(kind==='magma-ore'?3:2));
     w.interactEnvironment(entity);assert.equal(w.state.bag[item]-before,count);assert.equal(entity.mesh.visible,false);
   }
