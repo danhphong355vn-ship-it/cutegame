@@ -393,17 +393,29 @@ export async function createGameServer(options = {}) {
   };
 }
 
+export function startupFailureHint(error) {
+  for (let current = error, depth = 0; current && depth < 5; current = current.cause, depth++) {
+    if (current.message === 'DATABASE_URL is required for this deployment. No temporary account storage was started.') return 'DATABASE_URL is missing in Render Environment.';
+    if (current.code === '28P01' || current.code === '28000') return 'Database authentication failed. Check the username and password in DATABASE_URL.';
+    if (current.code === '3D000') return 'The database named in DATABASE_URL does not exist.';
+    if (current.code === '42501') return 'The database user lacks permission to initialize or read the game tables.';
+    if (current.code === 'ENOTFOUND' || current.code === 'EAI_AGAIN') return 'Database hostname could not be resolved. Check the host in DATABASE_URL.';
+    if (['ECONNREFUSED','ETIMEDOUT','ENETUNREACH','EHOSTUNREACH'].includes(current.code)) return 'The database could not be reached. Check its host, port, and availability.';
+    if (['CERT_HAS_EXPIRED','UNABLE_TO_VERIFY_LEAF_SIGNATURE','DEPTH_ZERO_SELF_SIGNED_CERT'].includes(current.code)) return 'Database TLS certificate validation failed.';
+  }
+  return 'The database or server configuration failed; inspect DATABASE_URL and database availability.';
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     const game = await createGameServer();
     console.log(`Zoo Garden server is ready at ${game.url}`);
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await game.close(); process.exit(0); });
-  } catch {
+  } catch (error) {
     // Database errors can contain connection details; keep deployment logs free of credentials.
-    console.error('Zoo Garden could not start. Check DATABASE_URL, database access, and the server configuration.');
+    console.error(`Zoo Garden could not start. ${startupFailureHint(error)}`);
     process.exitCode = 1;
   }
 }
-
 
 
