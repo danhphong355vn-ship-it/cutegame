@@ -351,7 +351,7 @@ export async function createGameServer(options = {}) {
         } else if (message.type === 'enemies' && room?.host === account.id && Array.isArray(message.enemies)) {
           if (Date.now() - room.lastSnapshot < 100) return; room.lastSnapshot = Date.now();
           combatAuthority.acceptSnapshots(room,message.enemies);
-          broadcast(room,{type:'enemies',enemies:room.enemies});
+          broadcast(room,{type:'enemies',enemies:combatAuthority.activeSnapshots(room)});
         } else if(message.type==='basic'&&room&&!peer.visit){
           rate('basic:'+account.id,12,1000);combatAuthority.basic(peer,text(message.targetId,100));
         } else if(message.type==='skill'&&room&&!peer.visit){
