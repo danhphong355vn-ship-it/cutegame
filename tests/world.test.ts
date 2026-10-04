@@ -6,10 +6,11 @@ import {RefinedAssetLibrary} from '../src/assets.ts';
 import {attackRange} from '../src/combat.ts';
 import {claimGift,newGame,plant,weaponStats} from '../src/model.ts';
 import * as M from '../src/model.ts';
-import {EnvironmentSimulation,createEnvironmentLayout} from '../src/environments.ts';
+import {EnvironmentSimulation,createEnvironmentLayout,zoneAt} from '../src/environments.ts';
 import {lavaEvent} from '../src/lava-weather.ts';
 import {beginTitanAttack,titanTelegraphs} from '../src/titan-patterns.ts';
 import {FOREST_RAPTOR_COUNT} from '../src/enemy-types.ts';
+import {enemyRoster} from '../src/enemy-roster.ts';
 import {t} from '../src/i18n.ts';
 
 // Exercise actual world behavior with real Three objects; only WebGL is omitted.
@@ -23,6 +24,15 @@ function world() {
     onInteract(){},onAttackEnemy(){},onDamage(){},onZone(){},
   }) as World;
 }
+
+test('home creatures spawn in their roster zone',()=>{
+ const w=world();w.build('home');
+ const roster=new Map(enemyRoster('home').map(e=>[e.id,e]));
+ for(const e of w.enemies){
+  assert.equal(zoneAt({x:e.homeX,z:e.homeZ}),roster.get(e.id)?.zone,e.id);
+  assert.ok(Math.hypot(e.homeX,e.homeZ)>=22,e.id);
+ }
+});
 
 test('world movement reaches a fractional goal beside a tree without corner cutting',()=>{
   const w=world();w.build('home');w.position.set(23.364043668843806,0,-23.966000208165497);
@@ -372,4 +382,69 @@ test('remote explorers move between network poses smoothly, but teleport across 
  assert.ok(Math.abs(remote.mesh.position.x-2)<.01);
  w.updateRemotePlayer('friend',{x:30,z:0});
  assert.equal(remote.mesh.position.x,30,'a teleport should not drift across the map');
+});
+
+test('remote interpolation has even frame steps, shortest turns and ignores duplicate roster refreshes',()=>{
+ const w=world();w.addRemotePlayer('friend',{x:0,z:0,y:0,facing:Math.PI-.1});const m=w.remotePlayers.get('friend')!.mesh;
+ const pose={x:1,z:0,y:1,facing:-Math.PI+.1};w.updateRemotePlayer('friend',pose);
+ const animate=(dt:number)=>(w as unknown as {animateRemotes(dt:number):void}).animateRemotes(dt);
+ for(let i=1;i<=4;i++){animate(.025);assert.ok(Math.abs(m.position.x-i*.25)<1e-8);assert.ok(Math.abs(m.position.y-i*.25)<1e-8);w.updateRemotePlayer('friend',pose);}
+ assert.ok(Math.abs(m.rotation.y-(Math.PI+.1))<1e-8,'turn crosses pi along the short arc');
+ animate(.5);assert.equal(m.position.x,1,'lost packets hold the last known position');
+ w.updateRemotePlayer('friend',{x:2,z:0,y:40,planet:'home',space:'home:friend'});assert.equal(m.position.x,2);assert.equal(m.position.y,0);
+ animate(.025);assert.equal(m.userData.speed,0,'entering a cottage does not generate a walking spike');
+});
+
+test('remote spin keeps rotating through pose packets and restores arms after finishing',()=>{
+ const w=world();w.addRemotePlayer('friend',{x:0,z:0,facing:0});const m=w.remotePlayers.get('friend')!.mesh;
+ w.playRemoteAction('friend','skill',0,{weapon:'sword'});
+ const animate=(dt:number)=>(w as unknown as {animateRemotes(dt:number):void}).animateRemotes(dt);
+ for(let i=1;i<=8;i++){animate(.05);w.updateRemotePlayer('friend',{x:i*.1,z:0,facing:0});}
+ assert.ok(m.rotation.y>8,'movement heading must not pull the spin back');
+ animate(2);animate(.01);assert.ok(Math.abs(m.getObjectByName('arm-left')!.rotation.z+.3)<1e-8);assert.ok(Math.abs(m.getObjectByName('arm-right')!.rotation.z-.3)<1e-8);
+});
+
+test('remote attacks use their weapon and skill poses, including across an avatar rebuild',()=>{
+ const w=world();w.addRemotePlayer('friend',{x:0,z:0});
+ const animate=(dt:number)=>(w as unknown as {animateRemotes(dt:number):void}).animateRemotes(dt);
+ w.playRemoteAction('friend','basic',undefined,{weapon:'gun'});w.updateRemotePlayer('friend',{x:0,z:0,color:'#ff0000'});animate(.05);
+ let m=w.remotePlayers.get('friend')!.mesh;assert.ok(m.getObjectByName('arm-right')!.rotation.x<-1);assert.ok(m.getObjectByName('arm-left')!.rotation.x<-1);
+ w.playRemoteAction('friend','skill',1,{pose:'dash',weapon:'fist'});animate(.05);assert.equal(m.getObjectByName('arm-left')!.rotation.x,1.2);
+ w.playRemoteAction('friend','skill',2,{pose:'slam',weapon:'fist'});animate(.21);assert.ok(Math.abs(m.getObjectByName('arm-left')!.rotation.x+2.9)<1e-8);
+});
+
+test('disguise skills use their own cast, hover and dash poses instead of default whirlwind',()=>{
+ const local=world();local.build('home');local.refreshPlayer();local.playDisguiseAction('dz_vampire',0);
+ assert.equal(local.spinT??0,0);
+ (local as unknown as {animatePlayer(dt:number):void}).animatePlayer(.05);
+ assert.ok(local.player.getObjectByName('arm-right')!.rotation.x<-1,'drain casts locally');
+ const remote=world();remote.addRemotePlayer('friend',{x:0,z:0});
+ const model=remote.remotePlayers.get('friend')!.mesh;
+ remote.playRemoteAction('friend','skill',0,{special:'dz_vampire',weapon:'fist'});
+ assert.equal(model.userData.spinT??0,0);
+ (remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.05);
+ assert.ok(model.getObjectByName('arm-right')!.rotation.x<-1,'drain casts remotely');
+ remote.playRemoteAction('friend','skill',1,{special:'dz_mage',weapon:'fist'});
+ (remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.05);
+ assert.equal(model.getObjectByName('arm-left')!.rotation.x,1.2,'teleport uses a dash pose');
+});
+
+test('ground slam lifts the remote avatar, lands, and leaves the ground pose unchanged',()=>{
+ const w=world();w.addRemotePlayer('friend',{x:0,z:0,y:0});const m=w.remotePlayers.get('friend')!.mesh;
+ w.playRemoteAction('friend','skill',2,{pose:'slam',weapon:'fist'});
+ const animate=(dt:number)=>(w as unknown as {animateRemotes(dt:number):void}).animateRemotes(dt);
+ animate(.21);assert.ok(m.position.y>2);assert.equal(w.remotePlayers.get('friend')!.pose.y,0);
+ w.updateRemotePlayer('friend',{x:1,z:0,y:0});animate(.1);assert.ok(m.position.y>0&&m.position.y<3,'a pose packet cannot add the jump height twice');
+ animate(.12);assert.equal(m.position.y,0,'landing returns to the ground');
+});
+
+test('punch flurry animates six alternating strikes locally and on a remote avatar',()=>{
+ const local=world();local.build('home');local.startPunchFlurry();
+ const animateLocal=(dt:number)=>(local as unknown as {animatePlayer(dt:number):void}).animatePlayer(dt);
+ const sides=[local.punchArm];for(let i=1;i<6;i++){animateLocal(.14);sides.push(local.punchArm);}
+ assert.equal(local.flurryHits,6);for(let i=1;i<sides.length;i++)assert.notEqual(sides[i],sides[i-1]);
+ const remote=world();remote.addRemotePlayer('friend',{x:0,z:0});remote.playRemoteAction('friend','skill',3,{special:'fist',weapon:'fist'});
+ const model=remote.remotePlayers.get('friend')!.mesh,animate=(dt:number)=>(remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(dt);
+ const remoteSides=[model.userData.punchArm];for(let i=1;i<6;i++){animate(.14);remoteSides.push(model.userData.punchArm);}
+ assert.equal(model.userData.flurryHits,6);for(let i=1;i<remoteSides.length;i++)assert.notEqual(remoteSides[i],remoteSides[i-1]);
 });

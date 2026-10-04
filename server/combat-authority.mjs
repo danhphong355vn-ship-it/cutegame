@@ -126,10 +126,13 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
       const roster=s.roster.get(raw?.id);if(!roster||raw.type!==roster.type||!Number.isFinite(raw.x)||!Number.isFinite(raw.z)||Math.hypot(raw.x,raw.z)>155)continue;
       let enemy=s.enemies.get(roster.id);
       if(!enemy){
-        if(!roster.dormant&&(Math.hypot(raw.x,raw.z)<22||s.planet==='home'&&zoneAt(raw)!==roster.zone))continue;
+        // A creature may already be chasing a player across the village/zone boundary
+        // before its first upload. Validate its spawn, not its current position.
+        const origin=spawnHome(roster,raw,s.planet);
+        if(!roster.dormant&&(Math.hypot(origin.x,origin.z)<22||s.planet==='home'&&zoneAt(origin)!==roster.zone))continue;
         // Hard difficulty: the room host's save (whose browser spawns the creatures) sets health and damage (difficulty.ts).
         const scale=s.scale,baseMaxHp=Math.round(roster.baseMaxHp*scale.hp),baseDamage=roster.baseDamage*scale.damage;
-        enemy={...roster,roster,baseMaxHp,baseDamage,home:spawnHome(roster,raw,s.planet),x:raw.x,z:raw.z,hp:roster.dormant?0:baseMaxHp,maxHp:baseMaxHp,damage:baseDamage,respawn:roster.dormant?999999:0,deadUntil:roster.dormant?Infinity:0,generation:0,contributors:new Map(),changedAt:now,statuses:{},shots:[]};s.enemies.set(roster.id,enemy);
+        enemy={...roster,roster,baseMaxHp,baseDamage,home:origin,x:raw.x,z:raw.z,hp:roster.dormant?0:baseMaxHp,maxHp:baseMaxHp,damage:baseDamage,respawn:roster.dormant?999999:0,deadUntil:roster.dormant?Infinity:0,generation:0,contributors:new Map(),changedAt:now,statuses:{},shots:[]};s.enemies.set(roster.id,enemy);
       }
       const elapsed=Math.max(.1,(now-enemy.changedAt)/1000),maximum=(ENEMY_TYPES[roster.type].speed+16)*elapsed+2;
       if(dist(enemy,raw)<=maximum){enemy.x=raw.x;enemy.z=raw.z;}
@@ -245,8 +248,11 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     if(newLife){engine.environment=new EnvironmentSimulation(createEnvironmentLayout(peer.planet));engine.damageAt=0;}
     if(reason==='reset'){engine.nextBasic=0;engine.nextSkill=[0,0,0,0];}
   }
-  function basic(peer,targetId){if(peer.visit||!peer.active||peer.account.profile.hp<=0)return;if(typeof targetId==='string')peer.target=targetId;const e=engineFor(peer),now=Date.now();if(now<e.nextBasic)return;const target=state(rooms.get(peer.room)).enemies.get(targetId);if(e.sim.basic(target)){const weapon=Game.weaponStats(combatProfile(peer));e.nextBasic=now+Math.max(.12,(weapon.cd||.5)/Math.max(.2,1+Game.activeStats(peer.account.profile).haste))*1000;}}
-  function skill(peer,index){if(peer.visit||!peer.active||peer.account.profile.hp<=0||!Number.isInteger(index)||index<0||index>3)return;const e=engineFor(peer),now=Date.now();if(now<e.nextSkill[index])return;const profile=combatProfile(peer),dz=profile.gear.disguise,weapon=Game.weaponStats(profile),list=Game.DISGUISES[dz]?.skills||[...BASE_SKILLS,SPECIALS[weapon.special||'fist']||SPECIALS.fist];if(dz?e.sim.disguise(dz,index):e.sim.skill(index,weapon.special||'fist')){e.nextSkill[index]=now+skillCooldown(profile,index,list[index].cd,!!dz)/Math.max(.2,1+Game.activeStats(profile).haste)*1000;internal(peer.account.id,'skill',[],records=>{const s=records.get(peer.account.id).profile;Game.recordEvent(s,'skill');return {index};}).catch(()=>{});}}
+  function playerAction(peer,action,index,weapon,special){
+    const room=rooms.get(peer.room);if(room)broadcast(room,{type:'playerAction',by:peer.account.id,action,index,weapon,special,facing:peer.pose.facing,pose:engineFor(peer).sim.pose?.kind},peer.account.id);
+  }
+  function basic(peer,targetId){if(peer.visit||!peer.active||peer.account.profile.hp<=0)return;if(typeof targetId==='string')peer.target=targetId;const e=engineFor(peer),now=Date.now();if(now<e.nextBasic)return;const target=state(rooms.get(peer.room)).enemies.get(targetId);if(e.sim.basic(target)){const weapon=Game.weaponStats(combatProfile(peer));playerAction(peer,'basic',undefined,weapon.kind);e.nextBasic=now+Math.max(.12,(weapon.cd||.5)/Math.max(.2,1+Game.activeStats(peer.account.profile).haste))*1000;}}
+  function skill(peer,index){if(peer.visit||!peer.active||peer.account.profile.hp<=0||!Number.isInteger(index)||index<0||index>3)return;const e=engineFor(peer),now=Date.now();if(now<e.nextSkill[index])return;const profile=combatProfile(peer),dz=profile.gear.disguise,weapon=Game.weaponStats(profile),list=Game.DISGUISES[dz]?.skills||[...BASE_SKILLS,SPECIALS[weapon.special||'fist']||SPECIALS.fist];if(dz?e.sim.disguise(dz,index):e.sim.skill(index,weapon.special||'fist')){playerAction(peer,'skill',index,weapon.kind,dz??weapon.special??'fist');e.nextSkill[index]=now+skillCooldown(profile,index,list[index].cd,!!dz)/Math.max(.2,1+Game.activeStats(profile).haste)*1000;internal(peer.account.id,'skill',[],records=>{const s=records.get(peer.account.id).profile;Game.recordEvent(s,'skill');return {index};}).catch(()=>{});}}
   function damage(peer,enemyId,source='melee'){
     if(peer.visit)return;const room=rooms.get(peer.room),enemy=room&&state(room).enemies.get(enemyId),e=engineFor(peer),now=Date.now();
     if(!enemy||enemy.hp<=0)return;
@@ -278,7 +284,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
         if(enemy.hp<=0&&!enemy.pending&&Number.isFinite(enemy.deadUntil)){enemy.respawn=Math.max(0,(enemy.deadUntil-now)/1000);if(enemy.respawn===0&&active.every(p=>dist(p.pose,enemy.home)>22)){enemy.x=enemy.home.x;enemy.z=enemy.home.z;enemy.hp=enemy.maxHp=enemy.baseMaxHp;enemy.damage=enemy.baseDamage;enemy.scaled=false;enemy.contributors.clear();enemy.generation++;room.killed.delete(enemy.id);health(room,enemy);}}
       }
       room.environment=environmentSnapshot(s.environment);
-      if(now-s.lastBroadcast>250){s.lastBroadcast=now;publish(room);broadcast(room,{type:'enemies',enemies:activeSnapshots(room)});broadcast(room,{type:'environment',snapshot:room.environment});}
+      if(now-s.lastBroadcast>250){s.lastBroadcast=now;publish(room);const changed=activeSnapshots(room);if(changed.length)broadcast(room,{type:'enemies',enemies:changed});broadcast(room,{type:'environment',snapshot:room.environment});}
       for(const peer of active){const e=engineFor(peer);e.sim.update(dt,true);e.environment.authoritative=false;e.environment.time=s.environment.time-dt;e.environment.weather.restore(weatherBefore);e.environment.fireRain=structuredClone(rainBefore);e.environment.lightning=structuredClone(lightningBefore);e.environment.lamps=new Map(s.environment.lamps);e.environment.eclipseUntil=s.environment.eclipseUntil;e.environment.dragonPhase=s.environment.dragonPhase;e.environment.nestLevel=before.nestLevel;
         if(peer.account.ridePlanet===peer.planet&&peer.account.rideUntil>now)e.environment.rideUntil=e.environment.time+(peer.account.rideUntil-now)/1000;
         const traits=Game.activeStats(peer.account.profile),hazard=e.environment.step(dt,peer.pose,{x:0,z:0},{...traits,fireResistance:traits.lavaproof?1:traits.fireResistance,flying:e.sim.statuses.flight>0||e.sim.statuses.bats>0},[]);
@@ -290,8 +296,16 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
   }
   const timer=setInterval(()=>{if(!stopped)try{tick(.05);}catch(error){onError(error);}},50);timer.unref();
   function activeSnapshots(room) {
-    const now = Date.now();
-    return [...state(room).enemies.values()].filter(e => e.hp < e.maxHp || e.phase !== 'idle' || e.combatAttacks?.length > 0 || (e.deadUntil && e.deadUntil > now) || (now - e.changedAt) < 3000).map(snapshot);
+    const s=state(room),previous=s.sentSnapshots??=new Map(),changed=[];
+    // changedAt tracks receipt of a host upload, not an actual visual change.
+    // Compare public state so idle creatures are quiet, while the final update
+    // (stopping, healing, respawning or clearing an effect) is still delivered.
+    for(const enemy of s.enemies.values()){
+      const value=snapshot(enemy),encoded=JSON.stringify(value);
+      if(previous.get(enemy.id)!==encoded){previous.set(enemy.id,encoded);changed.push(value);}
+    }
+    for(const id of previous.keys())if(!s.enemies.has(id))previous.delete(id);
+    return changed;
   }
   function bomb(peer,radius,multiplier){const room=rooms.get(peer.room);if(!room||peer.visit)return;for(const enemy of state(room).enemies.values())if(enemy.hp>0&&dist(peer.pose,enemy)<=radius+enemy.radius)hit(peer,enemy,{amount:Math.round(Game.attack(combatProfile(peer))*multiplier),critical:false,stun:.5,lift:0,knock:2,direction:{x:0,z:0}});}
   return {acceptSnapshots,activeSnapshots,basic,skill,damage,bomb,engineFor,state,internal,resetPeer,flushPeerHealth,async close(){stopped=true;clearInterval(timer);for(const engine of engines.values())flushHealth(engine);await Promise.allSettled([...queues.values()]);}};

@@ -1,3 +1,4 @@
+import {INDOOR_Y} from '../src/house.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -43,7 +44,7 @@ async function online({staticHost='true',base='/cute_game/',slotPresent=true,lan
   const exports={};
   vm.runInNewContext(await compile('online.ts',{VITE_STATIC_HOST:staticHost,BASE_URL:base}),{
     exports,document,window,
-    require:name=>{if(name==='./i18n.ts')return i18n;if(name==='./gameplay-controls.ts')return {gameplayKey};assert.equal(name,'./model.ts');return {};},
+    require:name=>{if(name==='./house.ts')return {INDOOR_Y};if(name==='./i18n.ts')return i18n;if(name==='./gameplay-controls.ts')return {gameplayKey};assert.equal(name,'./model.ts');return {};},
     fetch:async(url,options)=>{requests.push({url,options});return loginError&&url.endsWith('auth/login')?{ok:false,status:401,json:async()=>({error:loginError})}:{ok:true,json:async()=>session};},
     WebSocket:staticHost==='true'?class{constructor(){throw new Error('Unexpected socket connection');}}:Socket,
     localStorage:staticHost==='true'?new Proxy({},{get(){throw new Error('Static mode must not modify browser saves');}}):{getItem:()=>null,setItem(){}},

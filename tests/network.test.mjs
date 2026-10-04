@@ -296,3 +296,29 @@ test('same-account reconnect retains chat receipts and acknowledges a retry with
   assert.deepEqual(reconnected.drain(m=>m.type==='chat'&&m.message===message.message),[]);
   assert.deepEqual(peer.drain(m=>m.type==='chatAck'),[]);
 });
+
+test('effects and accepted animations stay in their home, visit, interior, wilderness and room',async t=>{
+  t.mock.timers.enable({apis:['Date'],now:1800000000000});
+  const {game,host,peer,store,barrier}=await protocolRoom(t);
+  const visual={kind:'ring',x:0,z:0,radius:2,color:'#abcdef'};
+  host.send({type:'effect',visual,space:'home:'+peer.id});host.send({type:'skill',index:0});host.send({type:'basic'});
+  await barrier(host,peer);
+  assert.deepEqual(peer.drain(m=>m.type==='effect'||m.type==='playerAction'),[],'neither legacy nor authoritative effects cross private homes');
+  await store.friendAction(host.id,peer.id,'request');await store.friendAction(peer.id,host.id,'accept');
+  for(const client of [host,peer])await fetch(game.url+'/api/auth/session',{headers:{Cookie:client.cookie}});
+  peer.send({type:'visit',id:host.id});await peer.next(m=>m.type==='visit'&&m.home?.id===host.id);
+  t.mock.timers.tick(1000);host.send({type:'skill',index:2});await barrier(host,peer);
+  const attacks=peer.drain(m=>m.type==='playerAction');assert.equal(attacks.length,1);assert.equal(attacks[0].action,'skill');assert.equal(attacks[0].pose,'slam');assert.equal(attacks[0].space,'home:'+host.id);
+  assert.ok(peer.drain(m=>m.type==='effect'&&m.visual).length,'visitors see server-generated combat visuals');
+  host.send({type:'skill',index:2});await barrier(host,peer);assert.deepEqual(peer.drain(m=>m.type==='playerAction'),[],'cooldown rejection cannot replay animation');
+  peer.send({type:'pose',x:0,z:3,y:40});await host.next(m=>m.type==='pose'&&m.player.id===peer.id&&m.player.y===40);
+  host.send({type:'effect',visual});await barrier(host,peer);assert.deepEqual(peer.drain(m=>m.type==='effect'&&m.visual?.color==='#abcdef'),[],'outside effects stay outside the cottage');
+  host.send({type:'pose',x:0,z:3,y:40});await peer.next(m=>m.type==='pose'&&m.player.id===host.id&&m.player.y===40);
+  host.send({type:'effect',visual});assert.equal((await peer.next(m=>m.type==='effect'&&m.visual?.color==='#abcdef')).indoor,true);
+  peer.send({type:'leaveVisit'});await peer.next(m=>m.type==='visit'&&!m.home);
+  t.mock.timers.tick(1000);
+  for(const [sender,receiver] of [[host,peer],[peer,host]]){sender.send({type:'pose',x:25,z:0,y:0});await receiver.next(m=>m.type==='pose'&&m.player.id===sender.id&&m.player.x===25);}
+  host.send({type:'effect',visual});assert.equal((await peer.next(m=>m.type==='effect'&&m.visual?.color==='#abcdef')).space,'wild');
+  peer.send({type:'party'});await peer.next(m=>m.type==='party');host.send({type:'effect',visual});await barrier(host,host);
+  assert.deepEqual(peer.drain(m=>m.type==='effect'&&m.visual?.color==='#abcdef'),[],'private rooms remain isolated');
+});

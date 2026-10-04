@@ -22,6 +22,16 @@ async function fixture(t,{planet='home',profile:configure=()=>{}}={}){
  function spawn(type,x=planet==='home'?-30:30,z=0,extra={}){const definition=enemyRoster(planet).find(e=>e.type===type);assert.ok(definition,type);authority.acceptSnapshots(room,[{id:definition.id,type,x,z,hp:1,...extra}]);return authority.state(room).enemies.get(definition.id);}
  return {store,account,peer,peers,room,rooms,authority,messages,next,spawn,deaths:()=>deaths};
 }
+test('a chasing creature is admitted from its valid spawn after crossing into another zone',async t=>{
+ const f=await fixture(t),roster=enemyRoster('home').find(e=>e.zone==='forest'&&!e.boss);
+ f.authority.acceptSnapshots(f.room,[{id:roster.id,type:roster.type,x:-19,z:0,homeX:-30,homeZ:0}]);
+ const enemy=f.authority.state(f.room).enemies.get(roster.id);
+ assert.ok(enemy,'the server must recognize the same creature visible to the host');
+ assert.equal(enemy.home.x,-30);
+ f.peer.pose={x:-19,z:1,facing:0,moving:false};
+ f.authority.basic(f.peer,enemy.id);
+ assert.ok(enemy.hp<enemy.maxHp,'the visible creature must take damage');
+});
 test('basic attacks and skills obey server cooldowns across repeated packets and room changes',async t=>{
  const f=await fixture(t),enemy=f.spawn('mushroom'),engine=f.authority.engineFor(f.peer);f.authority.basic(f.peer,enemy.id);const hp=enemy.hp;
  for(let i=0;i<20;i++)f.authority.basic(f.peer,enemy.id);assert.equal(enemy.hp,hp);
@@ -194,4 +204,18 @@ test('Hard difficulty: the room host save gives server creatures +25% health and
  const hard=await fixture(t,{profile:p=>{p.settings.difficulty='hard';}}),h=hard.spawn('mushroom');
  assert.equal(h.maxHp,Math.round(roster.baseMaxHp*1.25));assert.equal(h.hp,h.maxHp);assert.ok(Math.abs(h.damage-roster.baseDamage*1.2)<1e-9);
  const easy=await fixture(t),e=easy.spawn('mushroom');assert.equal(e.maxHp,roster.baseMaxHp);assert.equal(e.damage,roster.baseDamage);
+});
+
+test('accepted basic attacks emit one weapon animation and rejected repeats emit none',async t=>{
+ const f=await fixture(t,{profile:p=>{p.bag.sword_wood=1;p.gear.weapon='sword_wood';}}),enemy=f.spawn('mushroom');
+ f.authority.basic(f.peer,enemy.id);f.authority.basic(f.peer,enemy.id);
+ const actions=f.messages.filter(m=>m.type==='playerAction');assert.equal(actions.length,1);assert.equal(actions[0].action,'basic');assert.equal(actions[0].weapon,'sword');assert.equal(actions[0].by,'actor');assert.ok(Number.isFinite(actions[0].facing));
+});
+
+test('server labels punch flurry and ground slam for remote animation',async t=>{
+ const f=await fixture(t);
+ f.authority.skill(f.peer,3);f.authority.skill(f.peer,2);
+ const actions=f.messages.filter(m=>m.type==='playerAction');
+ assert.equal(actions.length,2);assert.equal(actions[0].special,'fist');assert.equal(actions[0].index,3);
+ assert.equal(actions[1].pose,'slam');assert.equal(actions[1].index,2);
 });

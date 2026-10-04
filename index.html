@@ -9,11 +9,21 @@
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
     <link rel="apple-touch-icon" href="%BASE_URL%icon-192.png" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
+    <style>
+      #loading-screen{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:#083448;color:#fff;font:700 16px system-ui,sans-serif;text-align:center}
+      #loading-screen[hidden]{display:none}
+      .loading-card{width:min(410px,84vw)}
+      .loading-card h1{margin:0 0 14px;color:#8be36c;font-size:clamp(44px,9vw,68px);text-shadow:3px 4px #342a38}
+      .loading-card p{margin:0 0 22px;font-size:14px}
+      .loading-track{height:14px;border:2px solid #8aa5ad;border-radius:99px;background:#173c4a;overflow:hidden}
+      #loading-progress{display:block;width:4%;height:100%;border-radius:99px;background:linear-gradient(90deg,#44c64b,#a6eb63);transition:width .25s}
+      #loading-status{display:block;margin-top:12px;font-size:13px}
+    </style>
   </head>
   <body>
+    <div id="loading-screen" role="status" aria-live="polite"><div class="loading-card"><h1>Zoo Garden</h1><p>Trồng cây · Câu cá · Săn quái · Chơi cùng bạn bè</p><div class="loading-track"><span id="loading-progress"></span></div><small id="loading-status">Đang tải mô hình 3D…</small></div></div>
     <canvas id="world" aria-label="Interactive 3D garden. Click the ground to walk, or use arrow keys. Press F to interact with nearby objects."></canvas>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
-

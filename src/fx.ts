@@ -126,7 +126,7 @@ export class ParticlePool {
 
 type TransientKind = 'ring' | 'flash' | 'arc' | 'spark';
 interface Transient { kind: TransientKind; object: T.Mesh | T.Sprite; material: T.Material & { opacity: number }; t: number; life: number; from: number; to: number; opacity: number }
-interface Floater { el: HTMLElement; pos: T.Vector3; t: number; life: number; vx: number }
+interface Floater { el: HTMLElement; pos: T.Vector3; t: number; life: number; vx: number; isChat?: boolean; follow?: () => Point3 | undefined }
 
 let sparkTexture: T.Texture | null = null;
 /**
@@ -263,15 +263,16 @@ export class Effects {
    * Numbers land alternately left and right of the point, within ±0.3 m, so two creatures hit by
    * one spin tick never stack their numbers.
    */
-  text(at: Point3, message: string, style = '') {
+  text(at: Point3, message: string, style = '', follow?: () => Point3 | undefined) {
     if (!this.layer) return;
     const el = document.createElement('span');
     el.className = `float ${style}`; el.textContent = message;
     this.layer.append(el);
     // Numbers alternate left and right of the hit point and drift outward, so quick hits do not stack on one spot.
-    const side = this.side = -this.side, centred = style.includes('callout') || style.includes('alert');
-    this.floaters.push({ el, pos: new T.Vector3(at.x + (centred ? 0 : side * between(.25, .5)), (at.y ?? 0) + 1.8, at.z + (centred ? 0 : between(-.3, .3))), t: 0, life: style.includes('callout') ? 1.6 : style.includes('big') ? 1.3 : 1, vx: centred ? 0 : side * .6 });
-    if (this.floaters.length > 40) { const old = this.floaters.shift()!; old.el.remove(); }
+    const isChat = style.includes('chat-bubble');
+    const side = this.side = -this.side, centred = style.includes('callout') || style.includes('alert') || isChat;
+    this.floaters.push({ el, pos: new T.Vector3(at.x + (centred ? 0 : side * between(.25, .5)), (at.y ?? 0) + (isChat ? 2.5 : 1.8), at.z + (centred ? 0 : between(-.3, .3))), t: 0, life: isChat ? 5 : style.includes('callout') ? 1.6 : style.includes('big') ? 1.3 : 1, vx: centred ? 0 : side * .6, isChat, follow });
+    if (this.floaters.length > (isChat ? 60 : 40)) { const old = this.floaters.shift()!; old.el.remove(); }
   }
 
   shake(amount: number) { this.shakeAmp = Math.max(this.shakeAmp, amount); this.shakeTime = .3; }
@@ -304,7 +305,10 @@ export class Effects {
   /** Floating text follows its world point every frame, so it never lags the camera. */
   updateText(dt: number, width: number, height: number) {
     for (let i = this.floaters.length - 1; i >= 0; i--) {
-      const f = this.floaters[i]; f.t += dt; f.pos.y += dt * 1.4; f.pos.x += dt * f.vx;
+      const f = this.floaters[i]; f.t += dt; 
+      if (f.follow) { const p = f.follow(); if (p) f.pos.set(p.x, (p.y || 0) + 2.5, p.z); }
+      else if (!f.isChat) { f.pos.y += dt * 1.4; f.pos.x += dt * f.vx; } 
+      else { f.pos.y += dt * 0.1; }
       const r = f.t / f.life;
       if (r >= 1) { f.el.remove(); this.floaters.splice(i, 1); continue; }
       this.project.copy(f.pos).project(this.camera);

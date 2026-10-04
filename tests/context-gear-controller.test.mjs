@@ -47,7 +47,7 @@ function fixture(...items) {
     world: {
       entities: [pond], enemies: [], position: { x: 5, z: 0 }, selected: null,
       destination: null, route: [], moving: false, keys: new Set(), pondTap: null, ring: { visible: false },
-      refreshPlayer: () => { calls.refresh++; }, playerAttack() {},
+      refreshPlayer: () => { calls.refresh++; }, playerAttack() {}, startPunchFlurry:()=>{calls.flurry=(calls.flurry??0)+1;},
     },
     fishingView: {
       mysteryNearCast:()=>null,
@@ -115,6 +115,7 @@ test('attack and skill controls use fists when the bag contains only a fishing r
   f.ctx.now += 4000; f.ctx.updateContextWeapon(); assert.equal(f.state.gear.weapon, 'rod');
   f.ctx.skill(3);
   assert.equal(f.state.gear.weapon, undefined);
+  assert.equal(f.calls.flurry,1,'the fist special animates even when a rod was held first');
   assert.deepEqual(f.calls.skills, [{ index: 3, special: 'fist', kind: 'fist', item: undefined }]);
   assert.ok(f.ctx.cooldowns[3] > 0); assert.equal(f.state.counters.skills, 1);
 });

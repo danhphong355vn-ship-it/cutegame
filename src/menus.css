@@ -258,3 +258,425 @@
   .shop-item:has(> [data-action="equip"]) > div:nth-child(2) { flex: 1 1 calc(100% - 52px); }
   .shop-item:has(> [data-action="equip"]) > [data-action="buy"] { margin-left: 44px; }
 }
+
+/* ------------------------------------------------------------ Dark Inventory Redesign */
+#dialog:has(.dark-bag-theme) {
+  background: #181920 !important;
+  color: #fff !important;
+  border-radius: 24px !important;
+  border: 1px solid #2e303d !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75) !important;
+  max-width: 500px !important;
+  width: 95vw !important;
+}
+
+#dialog:has(.dark-bag-theme) > header {
+  background: linear-gradient(180deg, #2b2e3c, #1f212a) !important;
+  border-bottom: 1px solid #2e313f !important;
+  padding: 12px 16px !important;
+}
+
+#dialog:has(.dark-bag-theme) #dialog-icon,
+#dialog:has(.dark-bag-theme) #dialog-kicker {
+  display: none !important;
+}
+
+#dialog:has(.dark-bag-theme) h2 {
+  color: #fff !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+}
+
+#dialog:has(.dark-bag-theme) .close-button {
+  background: #2b2e3b !important;
+  color: #e5e7eb !important;
+  border-radius: 50% !important;
+  width: 32px !important;
+  height: 32px !important;
+  font-size: 16px !important;
+  border: 1px solid #3d4152 !important;
+  display: grid !important;
+  place-items: center !important;
+  box-shadow: none !important;
+}
+
+#dialog:has(.dark-bag-theme) #dialog-body {
+  padding: 12px 14px 16px !important;
+  gap: 10px !important;
+  background: #181920 !important;
+  color: #fff !important;
+  max-height: 82vh !important;
+}
+
+/* Equipment slots */
+.dark-equipment-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.dark-equip-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.dark-equip-btn .slot-box {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #20222a;
+  border: 1.5px dashed #3e4252;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.dark-equip-btn.equipped .slot-box {
+  border: 1.5px solid #4f5366;
+  background: #262833;
+}
+
+.dark-equip-btn .slot-box img,
+.dark-equip-btn .slot-box span {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-equip-btn .slot-placeholder {
+  font-size: 18px;
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.dark-equip-btn small {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+/* Stats strip */
+.dark-stat-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  background: #1f2129;
+  border: 1px solid #2b2e3a;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #f3f4f6;
+}
+
+.dark-stat-strip span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dark-stat-strip b {
+  color: #fff;
+}
+
+/* Detail Card */
+.dark-detail-card {
+  display: flex;
+  gap: 12px;
+  background: #20222a;
+  border: 1px solid #303342;
+  border-radius: 14px;
+  padding: 12px;
+  align-items: center;
+}
+
+.dark-detail-hero {
+  width: 62px;
+  height: 62px;
+  flex-shrink: 0;
+  background: #282a35;
+  border: 1px solid #373a4a;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-detail-hero img,
+.dark-detail-hero span {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-detail-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dark-detail-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dark-detail-sub {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.dark-detail-desc {
+  font-size: 11px;
+  color: #cbd5e1;
+  line-height: 1.3;
+  margin: 1px 0;
+}
+
+.dark-detail-effect {
+  font-size: 11px;
+  font-weight: bold;
+  color: #f87171;
+}
+
+.dark-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dark-btn-eat {
+  background: #22c55e !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 5px 16px !important;
+  font-weight: bold !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 6px rgba(34, 197, 94, 0.3) !important;
+}
+
+.dark-btn-drop {
+  background: #474a58 !important;
+  color: #e5e7eb !important;
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 5px 14px !important;
+  font-weight: bold !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+}
+
+.dark-btn-equip {
+  background: #0284c7 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 5px 16px !important;
+  font-weight: bold !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+}
+
+.dark-btn-unequip {
+  background: #474a58 !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 5px 14px !important;
+  font-weight: bold !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+}
+
+/* Grid */
+.dark-inv-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.dark-grid-slot {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #20222a;
+  border: 1.5px solid #303342;
+  border-radius: 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.dark-grid-slot.empty {
+  background: #191a22;
+  border: 1.5px solid #262835;
+  cursor: default;
+}
+
+.dark-grid-slot.selected {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.45) !important;
+}
+
+.dark-grid-slot .slot-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-grid-slot .slot-art img,
+.dark-grid-slot .slot-art span {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.dark-grid-slot .slot-count {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 10px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+
+/* Expand card */
+.dark-expand-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #20222a;
+  border: 1px solid #303342;
+  border-radius: 14px;
+  padding: 10px 14px;
+  gap: 12px;
+}
+
+.dark-expand-icon {
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.dark-expand-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dark-expand-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dark-expand-badge {
+  background: #333646;
+  color: #e2e8f0;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+}
+
+.dark-expand-sub {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.dark-expand-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: #cbd5e1;
+  margin-top: 2px;
+}
+
+.dark-expand-cost span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.dark-expand-btn {
+  background: #e2e8f0 !important;
+  color: #1e293b !important;
+  border: none !important;
+  border-radius: 20px !important;
+  padding: 7px 18px !important;
+  font-weight: 800 !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+}
+
+.dark-expand-btn:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+/* Stats footer */
+.dark-stats-footer {
+  display: flex;
+  justify-content: space-around;
+  background: #1b1c24;
+  border: 1px solid #282a36;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.dark-stats-footer b {
+  color: #fff;
+  margin-left: 4px;
+}
+
+/* Planet button */
+.dark-planet-btn {
+  background: #38bdf8 !important;
+  color: #0f172a !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+  border: none !important;
+  border-radius: 12px !important;
+  padding: 11px !important;
+  width: 100% !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.3) !important;
+}
+

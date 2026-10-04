@@ -405,6 +405,7 @@ export const VI_UI: Record<string, string> = {
   'This crystal needs a moment to regrow.': 'Pha lê này cần chút thời gian để mọc lại.',
   'A crystal for your crafting collection!': 'Thêm một viên pha lê để chế tạo!',
   'Your backpack is full. Store or sell something first.': 'Ba lô đã đầy. Hãy cất hoặc bán bớt đồ trước.',
+  'This item belongs to another player. You cannot pick it up.': 'Món đồ này của người khác, bạn không thể nhặt.',
   '{enemy} defeated!': 'Đã đánh bại {enemy}!',
   'Boss': 'Trùm',
   'Equip a combat weapon to use these skills.': 'Trang bị vũ khí chiến đấu để dùng các kỹ năng này.',

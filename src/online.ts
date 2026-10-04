@@ -1,6 +1,7 @@
 import type { GameBridge, NetworkDrop } from './game-bridge.ts';
 import { newGame, type SaveState, type PlanetId, type Difficulty } from './model.ts';
 import type { LookId } from './looks.ts';
+import { INDOOR_Y } from './house.ts';
 import './online.css';
 import { t, onLanguageChange } from './i18n.ts';
 import {gameplayKey} from './gameplay-controls.ts';
@@ -10,7 +11,7 @@ interface Explorer { id:string;username?:string;name:string;color:string;level:n
 interface Home extends Explorer { discovered?:PlanetId[]; plots:SaveState['plots'];farm?:SaveState['farm'];placed?:unknown[];decorations?:unknown[];helper?:unknown;friends?:unknown[] }
 interface EnemyState { id:string;x:number;z:number;hp:number;maxHp:number;[key:string]:unknown }
 interface NetworkWorld {
-  updateRemotePlayers(players:Explorer[]):void;clearRemotePlayers():void;playRemoteAction(id:string,action:'basic'|'skill',index?:number):void;
+  updateRemotePlayers(players:Explorer[]):void;clearRemotePlayers():void;playRemoteAction(id:string,action:'basic'|'skill',index?:number,details?:{weapon?:string;facing?:number;pose?:string;special?:string}):void;
   setNetworkRole(role:'host'|'peer'|null):void;
   /** The host's difficulty while someone else hosts the room (creature scale, the Settings note); null otherwise. */
   roomDifficulty:Difficulty|null;
@@ -24,6 +25,15 @@ interface NetworkWorld {
 interface Session { authorityVersion?:number;account:Explorer|null;profile?:SaveState;revision?:number;friends?:Explorer[];requests?:Explorer[] }
 interface ActionJob extends GameIntent {requestId:string;expectedRevision:number;rulesVersion:1;submitted?:boolean}
 interface ChatAttempt { requestId:string;draft:string;accountId:string;room:string;connection:WebSocket;pending:boolean;timer?:number }
+// randomUUID is unavailable on HTTP LAN/IP pages in some mobile browsers;
+// getRandomValues is still available there and provides the same random UUID bytes.
+function requestId(){
+  if(typeof crypto.randomUUID==='function')return crypto.randomUUID();
+  const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+  bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
+  const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
 const el = <K extends keyof HTMLElementTagNameMap>(tag:K,className='',text='') => {const node=document.createElement(tag);node.className=className;node.textContent=text;return node;};
 const button=(label:string,action:()=>void,className='')=>{const node=el('button',className,t(label));node.type='button';node.addEventListener('click',action);return node;};
 
@@ -64,6 +74,39 @@ export function initOnline(game:GameBridge) {
   const header=el('header','social-header'),heading=el('h2','',t('Play together')),close=button('✕',()=>dialog.close(),'social-close');close.setAttribute('aria-label',t('Close online menu'));header.append(heading,close);
   const tabs=el('nav','social-tabs'),content=el('div','social-content'),notice=el('p','social-notice');notice.setAttribute('role','status');dialog.append(header,tabs,notice,content);
   dialog.addEventListener('click',event=>{if(event.target===dialog&&event.clientX&&(event.clientX<dialog.getBoundingClientRect().left||event.clientX>dialog.getBoundingClientRect().right))dialog.close();});
+  
+  // HUD Chat Overlay
+  const hudChatLog = el('div');
+  hudChatLog.style.cssText = 'position:fixed; bottom:180px; left:16px; width:300px; z-index:100; pointer-events:none; display:flex; flex-direction:column; gap:4px; text-shadow:1px 1px 2px rgba(0,0,0,0.8); font-size:14px; font-weight:bold; color:white; font-family:sans-serif;';
+  document.body.appendChild(hudChatLog);
+
+  const hudChatForm = el('form');
+  hudChatForm.style.cssText = 'position:fixed; bottom:110px; left:16px; z-index:101; display:none;';
+  hudChatForm.innerHTML = `<input type="text" placeholder="Nhập tin nhắn..." autocomplete="off" style="width:200px; padding:10px 14px; border-radius:20px; border:none; background:rgba(255,255,255,0.9); pointer-events:auto; outline:none; box-shadow:0 2px 5px rgba(0,0,0,0.2); font-family:sans-serif;">`;
+  document.body.appendChild(hudChatForm);
+
+  const hudChatBtn = el('button');
+  hudChatBtn.style.cssText = 'position:fixed; bottom:110px; left:16px; z-index:101; width:44px; height:44px; border-radius:50%; border:none; background:rgba(0,0,0,0.5); color:white; cursor:pointer; pointer-events:auto; font-size:20px; display:flex; justify-content:center; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.3);';
+  hudChatBtn.innerText = '💬';
+  document.body.appendChild(hudChatBtn);
+
+  const hudChatInput = hudChatForm.querySelector('input')!;
+  hudChatBtn.onclick = () => { hudChatBtn.style.display = 'none'; hudChatForm.style.display = 'block'; hudChatInput.focus(); };
+  hudChatInput.onblur = () => { setTimeout(() => { hudChatForm.style.display = 'none'; hudChatBtn.style.display = 'flex'; }, 200); };
+  hudChatForm.onsubmit = (e) => {
+    e.preventDefault();
+    const msg = hudChatInput.value.trim();
+    if (msg && chatRoom && chatReady && socket?.readyState === WebSocket.OPEN && account) {
+      const id=chatAttempt&&chatAttempt.accountId===account.id&&chatAttempt.room===chatRoom&&chatAttempt.draft===msg?chatAttempt.requestId:requestId();
+      const attempt:ChatAttempt={requestId:id,draft:msg,accountId:account.id,room:chatRoom,connection:socket,pending:true};
+      chatAttempt=attempt;
+      socket.send(JSON.stringify({type:'chat',message:msg,requestId:id}));
+    }
+    hudChatInput.value = '';
+    hudChatForm.style.display = 'none';
+    hudChatBtn.style.display = 'flex';
+  };
+
   const world=()=>game.getWorld() as ReturnType<GameBridge['getWorld']> & NetworkWorld;
   let noticeSource='',noticeParams:Record<string,string|number>={},saveStatusSource='';
   function setNotice(message:string,params:Record<string,string|number>={}){noticeSource=message;noticeParams=params;notice.textContent=t(message,params);}
@@ -95,10 +138,10 @@ export function initOnline(game:GameBridge) {
     captureChatDraft();if(chatAttempt?.pending||!chatDraft.trim())return;
     if(!account||!chatRoom||!chatReady||socket?.readyState!==WebSocket.OPEN){announce('Chat is reconnecting. Your draft is kept.');return;}
     // Reuse an uncertain delivery's ID so a retry cannot broadcast an accepted message twice.
-    const previous=chatAttempt,requestId=previous&&previous.accountId===account.id&&previous.room===chatRoom&&previous.draft===chatDraft?previous.requestId:crypto.randomUUID();
-    stopChatWait();const attempt:ChatAttempt={requestId,draft:chatDraft,accountId:account.id,room:chatRoom,connection:socket,pending:true};chatAttempt=attempt;
+    const previous=chatAttempt,id=previous&&previous.accountId===account.id&&previous.room===chatRoom&&previous.draft===chatDraft?previous.requestId:requestId();
+    stopChatWait();const attempt:ChatAttempt={requestId:id,draft:chatDraft,accountId:account.id,room:chatRoom,connection:socket,pending:true};chatAttempt=attempt;
     refreshChatControls();setNotice('');
-    try{socket.send(JSON.stringify({type:'chat',message:attempt.draft,requestId}));}
+    try{socket.send(JSON.stringify({type:'chat',message:attempt.draft,requestId:attempt.requestId}));}
     catch{releaseChat('Chat is reconnecting. Your draft is kept.');return;}
     attempt.timer=window.setTimeout(()=>{if(chatAttempt===attempt&&attempt.pending)releaseChat('Message delivery is unconfirmed. Your draft is kept; you can try sending again.');},10000);
   }
@@ -120,7 +163,8 @@ export function initOnline(game:GameBridge) {
   world().onRemotePlayerClick=openPlayer;
   document.addEventListener('keydown',event=>{
     if(gameplayKey(event)!=='Enter'||event.repeat||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]'))return;
-    if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();captureChatDraft();tab='world';render();if(!dialog.open)dialog.showModal();content.querySelector<HTMLInputElement>('.social-chat-input')?.focus();
+    if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();
+    if(hudChatForm.style.display==='none'){hudChatBtn.style.display='none';hudChatForm.style.display='block';hudChatInput.focus();}
   });
   function refreshButton(){const label=account?t(status,{code:party||''}):t('Play together');toggle.textContent=socialSlot?'👥':`👥 ${label}`;toggle.title=label;toggle.setAttribute('aria-label',t('Play together'));dialog.setAttribute('aria-label',t('Play together'));close.setAttribute('aria-label',t('Close online menu'));toggle.dataset.online=String(!!account);}
   function expireSession(){
@@ -155,7 +199,7 @@ export function initOnline(game:GameBridge) {
   function rejectActions(message:string){for(const waiter of waiting.values())waiter.reject(new Error(message));waiting.clear();actionQueue=[];}
   function queueAction(intent:GameIntent):Promise<ActionReply>{
     if(!account||stopped)return Promise.reject(new Error('Reconnect before changing your online adventure.'));
-    const job:ActionJob={...structuredClone(intent),requestId:crypto.randomUUID(),expectedRevision:revision,rulesVersion:1};actionQueue.push(job);rememberActions();setSaveStatus('◌ Saving online…');
+    const job:ActionJob={...structuredClone(intent),requestId:requestId(),expectedRevision:revision,rulesVersion:1};actionQueue.push(job);rememberActions();setSaveStatus('◌ Saving online…');
     const answer=new Promise<ActionReply>((resolve,reject)=>waiting.set(job.requestId,{resolve,reject}));void flushSave();return answer;
   }
   async function shareNearbyLoot(){
@@ -224,14 +268,33 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='dropReleased')game.releaseNetworkDrop(message.id);
       else if(message.type==='healthResult')game.applyAuthorityHealth(message.delta||0,!!message.died);
       else if(message.type==='chatAck')acknowledgeChat(message.requestId,connection);
-      else if(message.type==='chat'&&!restoring&&chatRoom){chat.push({name:String(message.name),message:String(message.message)});if(chat.length>60)chat.shift();if(dialog.open&&tab==='world')renderChat();else game.showNotice(`${message.name}: ${message.message}`);}
+      else if(message.type==='chat'&&!restoring&&chatRoom){
+        chat.push({name:String(message.name),message:String(message.message)});
+        if(chat.length>60)chat.shift();
+        if(dialog.open&&tab==='world')renderChat();
+        
+        const entry = document.createElement('div');
+        entry.innerHTML = `<span style="color:#a6eb63">${message.name}:</span> ${message.message}`;
+        hudChatLog.appendChild(entry);
+        setTimeout(() => entry.remove(), 7000);
+
+        game.showChatBubble?.(String(message.id), String(message.message));
+      }
       else if(message.type==='friends'){friends=message.friends||[];requests=message.requests||[];if(dialog.open&&tab==='friends')render();}
       else if(message.type==='visit'){
         chatReady=true;refreshChatControls();visiting=message.home?.id||null;
         if(message.home){const home=message.home as Home;const state={...newGame(home.name,home.color),discovered:home.discovered??['home'],plots:home.plots,gear:home.gear,...(home.farm?{farm:home.farm}:{}),...(home.placed?{placed:home.placed}:{}),...(home.decorations?{decorations:home.decorations}:{}),...(home.helper?{helper:home.helper}:{}),...(home.friends?{friends:home.friends}:{})};game.setVisiting(home.name,state as SaveState);}
         else game.setVisiting(null);renderPlayers();announce(visiting?"Visiting {name}'s garden":'Back in your garden',{name:message.home?.name||''});if(dialog.open)render();
       }else if(message.type==='home'&&message.home?.id===visiting)game.setVisiting(message.home.name,{discovered:message.home.discovered,plots:message.home.plots,decorations:message.home.decorations,farm:message.home.farm,helper:message.home.helper,friends:message.home.friends} as Partial<SaveState>);
-      else if(message.type==='effect'){if(message.visual)game.applyRemoteEffect(message.visual);else{if(typeof message.by==='string'&&(message.action==='basic'||message.action==='skill'))world().playRemoteAction(message.by,message.action,message.index);world().burst(message.x,message.z,message.color,8);}}
+      else if(message.type==='effect'||message.type==='playerAction'){
+        const local=game.getPresence(),space=visiting?`home:${visiting}`:local.planet==='home'&&Math.hypot(local.x,local.z)<18?`home:${account?.id}`:'wild';
+        // A queued packet can arrive after we have entered a different home/interior.
+        if(message.space!==space||message.planet!==local.planet||message.indoor!==((local.y??0)>=INDOOR_Y-10))return;
+        if(message.type==='playerAction'){
+          if(typeof message.by==='string'&&(message.action==='basic'||message.action==='skill'))world().playRemoteAction(message.by,message.action,message.index,message);
+        }else if(message.visual)game.applyRemoteEffect(message.visual);
+        else world().burst(message.x,message.z,message.color,8);
+      }
       else if(message.type==='party'){party=message.code;announce('Party code: {code}',{code:party||''});if(dialog.open)render();}
       else if(message.type==='error'){if(chatMatches(message.requestId,connection))releaseChat();if(!message.requestId){chatReady=!!chatRoom&&connection.readyState===WebSocket.OPEN;refreshChatControls();}if(restoring&&fallbackJoin){desiredParty=null;restoring=false;joined(fallbackJoin);}announce(message.message||'That action was unavailable.');}
     });
@@ -303,7 +366,7 @@ export function initOnline(game:GameBridge) {
     // damage and rewards with canonical combat values before relaying the snapshot.
     if(host===account.id&&enemyClock>=.15){enemyClock=0;send({type:'enemies',enemies:world().enemySnapshots()});}
   });
-  game.onAction(action=>{if(!account)return;if(action.kind==='basic')send({type:'basic',targetId:action.targetId,requestId:crypto.randomUUID()});else if(action.kind==='skill')send({type:'skill',index:action.index,requestId:crypto.randomUUID()});send({type:'effect',action:action.kind,index:action.index,effect:action.special||action.kind,visual:action.effect,x:action.x,z:action.z,color:action.kind==='skill'?'#d1a6ff':'#fff2a0'});});
+  game.onAction(action=>{if(!account)return;if(action.kind==='basic')send({type:'basic',targetId:action.targetId,requestId:requestId()});else if(action.kind==='skill')send({type:'skill',index:action.index,requestId:requestId()});});
   document.addEventListener('visibilitychange',()=>{send({type:'active',active:!document.hidden});if(document.hidden)void flushSave();});
   window.addEventListener('pagehide',rememberActions);
   onLanguageChange(()=>{

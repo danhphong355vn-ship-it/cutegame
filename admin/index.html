@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zoo Garden - Admin Dashboard</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+    .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    h1 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+    th { background-color: #f8f9fa; color: #2c3e50; }
+    tr:nth-child(even) { background-color: #f8f9fa; }
+    tr:hover { background-color: #f1f1f1; }
+    .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; background-color: #3498db; }
+    .btn:hover { background-color: #2980b9; }
+    .btn-danger { background-color: #e74c3c; }
+    .btn-danger:hover { background-color: #c0392b; }
+    #login-section { max-width: 400px; margin: 50px auto; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; }
+    .form-group input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    #error-message { color: #e74c3c; margin-top: 10px; }
+    .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; background: #2ecc71; color: white; }
+    .badge.admin { background: #e67e22; }
+  </style>
+</head>
+<body>
+  <div class="container" id="login-section">
+    <h1>Đăng nhập Admin</h1>
+    <div class="form-group">
+      <label>Tên đăng nhập</label>
+      <input type="text" id="username">
+    </div>
+    <div class="form-group">
+      <label>Mật khẩu</label>
+      <input type="password" id="password">
+    </div>
+    <button class="btn" onclick="login()">Đăng nhập</button>
+    <div id="error-message"></div>
+  </div>
+
+  <div class="container" id="dashboard-section" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h1>Admin Dashboard</h1>
+      <button class="btn btn-danger" onclick="logout()">Đăng xuất</button>
+    </div>
+    
+    <div style="background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+      <h3>Phát Loa Toàn Server</h3>
+      <div style="display: flex; gap: 10px;">
+        <input type="text" id="broadcast-msg" placeholder="Nhập thông báo..." style="flex: 1; padding: 8px;">
+        <button class="btn" onclick="sendBroadcast()" style="background-color: #f39c12;">Phát Thông Báo</button>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h3>Danh sách người chơi</h3>
+      <button class="btn" onclick="fetchUsers()">Làm mới danh sách</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Tên đăng nhập</th>
+          <th>Tên nhân vật</th>
+          <th>Cấp độ</th>
+          <th>Vai trò</th>
+          <th>Hành động</th>
+        </tr>
+      </thead>
+      <tbody id="user-table-body">
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Catalog Modal -->
+  <div id="catalog-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index: 1000; overflow-y: auto;">
+    <div style="background:#fff; max-width:900px; margin:50px auto; padding:20px; border-radius:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Chọn vật phẩm cho <span id="gift-target-name" style="color:#e74c3c;"></span></h2>
+        <button onclick="closeCatalog()" class="btn btn-danger">Đóng</button>
+      </div>
+      <div id="catalog-tabs" style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;"></div>
+      <input type="text" id="catalog-search" placeholder="Tìm tên vật phẩm (Tiếng Việt hoặc ID)..." style="width:100%; padding:10px; margin-bottom:15px; box-sizing:border-box;" onkeyup="filterCatalog()">
+      <div id="catalog-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px;">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function apiCall(url, options = {}) {
+      const res = await fetch(url, {
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...options.headers }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi kết nối');
+      return data;
+    }
+
+    async function checkSession() {
+      try {
+        const data = await apiCall('/api/auth/session');
+        if (data.account) {
+          showDashboard();
+        }
+      } catch (e) {
+        // Not logged in
+      }
+    }
+
+    async function login() {
+      const user = document.getElementById('username').value;
+      const pass = document.getElementById('password').value;
+      const err = document.getElementById('error-message');
+      err.textContent = 'Đang xử lý...';
+      try {
+        await apiCall('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ username: user, password: pass })
+        });
+        err.textContent = '';
+        showDashboard();
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    }
+
+    async function logout() {
+      await apiCall('/api/auth/logout', { method: 'POST' });
+      document.getElementById('login-section').style.display = 'block';
+      document.getElementById('dashboard-section').style.display = 'none';
+    }
+
+    function showDashboard() {
+      document.getElementById('login-section').style.display = 'none';
+      document.getElementById('dashboard-section').style.display = 'block';
+      fetchUsers();
+    }
+
+    async function fetchUsers() {
+      try {
+        const data = await apiCall('/api/admin/users');
+        const tbody = document.getElementById('user-table-body');
+        tbody.innerHTML = '';
+        data.users.forEach(u => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${u.username}</td>
+            <td>${u.profile.name}</td>
+            <td>${u.profile.level || 1}</td>
+            <td>
+              ${u.isAdmin ? '<span class="badge admin">Admin</span>' : '<span class="badge">Người chơi</span>'}
+            </td>
+            <td>
+              <button class="btn" onclick="giveEnergy('${u.id}', '${u.profile.name}')" style="background-color: #27ae60; padding: 4px 8px; font-size: 12px; margin-right: 5px;">+ Energy</button>
+              <button class="btn" onclick="giveItem('${u.id}', '${u.profile.name}')" style="background-color: #8e44ad; padding: 4px 8px; font-size: 12px;">+ Vật phẩm</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        if (e.message.includes('Admin access required')) {
+           alert('Tài khoản của bạn không có quyền Admin!');
+           logout();
+        } else {
+           alert('Lỗi lấy danh sách user: ' + e.message);
+        }
+      }
+    }
+
+    async function sendBroadcast() {
+      const msg = document.getElementById('broadcast-msg').value;
+      if (!msg) return alert('Vui lòng nhập thông báo!');
+      try {
+        await apiCall('/api/admin/broadcast', {
+          method: 'POST',
+          body: JSON.stringify({ message: msg })
+        });
+        alert('Đã phát thông báo thành công!');
+        document.getElementById('broadcast-msg').value = '';
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
+    }
+
+    async function giveEnergy(userId, name) {
+      const amountStr = prompt('Nhập số lượng Energy muốn tặng cho ' + name + ':', '1000');
+      if (!amountStr) return;
+      const amount = parseInt(amountStr, 10);
+      if (isNaN(amount) || amount <= 0) return alert('Số lượng không hợp lệ');
+
+      try {
+        await apiCall('/api/admin/give', {
+          method: 'POST',
+          body: JSON.stringify({ targetId: userId, type: 'energy', amount: amount })
+        });
+        alert('Tặng thành công!');
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
+    }
+
+    let currentTargetId = null;
+    let catalogData = [];
+    let currentCategory = 'Tất cả';
+
+    async function giveItem(userId, name) {
+      currentTargetId = userId;
+      document.getElementById('gift-target-name').innerText = name;
+      document.getElementById('catalog-modal').style.display = 'block';
+      
+      if (catalogData.length === 0) {
+        try {
+          const res = await apiCall('/api/admin/catalog');
+          catalogData = res.catalog;
+          renderCatalogTabs();
+          renderCatalog();
+        } catch (e) {
+          alert('Lỗi tải danh sách vật phẩm: ' + e.message);
+        }
+      } else {
+        renderCatalog();
+      }
+    }
+
+    function closeCatalog() {
+      document.getElementById('catalog-modal').style.display = 'none';
+    }
+
+    function renderCatalogTabs() {
+      const tabsDiv = document.getElementById('catalog-tabs');
+      tabsDiv.innerHTML = '';
+      
+      const categories = ['Tất cả', ...new Set(catalogData.map(i => i.category))].sort();
+      categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.innerText = cat;
+        btn.style.cssText = `padding:6px 12px; border:none; border-radius:15px; cursor:pointer; background:${cat === currentCategory ? '#3498db' : '#ecf0f1'}; color:${cat === currentCategory ? '#fff' : '#333'}`;
+        btn.onclick = () => {
+          currentCategory = cat;
+          renderCatalogTabs();
+          filterCatalog();
+        };
+        tabsDiv.appendChild(btn);
+      });
+    }
+
+    function renderCatalog(filterText = '') {
+      const grid = document.getElementById('catalog-grid');
+      grid.innerHTML = '';
+      catalogData.forEach(item => {
+        if (currentCategory !== 'Tất cả' && item.category !== currentCategory) return;
+        const nameMatch = item.name && item.name.toLowerCase().includes(filterText);
+        const idMatch = item.id.toLowerCase().includes(filterText);
+        if (filterText && !nameMatch && !idMatch) return;
+        
+        const div = document.createElement('div');
+        div.style.cssText = 'border:1px solid #ddd; padding:10px; text-align:center; cursor:pointer; border-radius:4px; transition: 0.2s;';
+        div.innerHTML = `
+          ${item.icon ? `<img src="${item.icon}" style="width:48px; height:48px; object-fit:contain;" alt="${item.id}" />` : '<div style="height:48px;line-height:48px;color:#aaa;font-size:10px;">No Icon</div>'}
+          <div style="font-size:13px; margin-top:5px; word-wrap:break-word; font-weight:bold; color:#2c3e50;" title="${item.id}">${item.name || item.id}</div>
+        `;
+        div.onclick = () => selectItemToGift(item.id, item.name);
+        div.onmouseover = () => div.style.background = '#f8f9fa';
+        div.onmouseout = () => div.style.background = '#fff';
+        grid.appendChild(div);
+      });
+    }
+
+    function filterCatalog() {
+      renderCatalog(document.getElementById('catalog-search').value.toLowerCase());
+    }
+
+    async function selectItemToGift(itemId, name) {
+      const amountStr = prompt(`Nhập số lượng '${name}' muốn tặng:`, '1');
+      if (!amountStr) return;
+      const amount = parseInt(amountStr, 10);
+      if (isNaN(amount) || amount <= 0) return alert('Số lượng không hợp lệ');
+
+      try {
+        await apiCall('/api/admin/give', {
+          method: 'POST',
+          body: JSON.stringify({ targetId: currentTargetId, type: 'item', itemId: itemId, amount: amount })
+        });
+        alert('Tặng vật phẩm thành công!');
+        closeCatalog();
+      } catch (e) {
+        alert('Lỗi: ' + e.message);
+      }
+    }
+
+    checkSession();
+  </script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import {INDOOR_Y} from '../src/house.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -38,6 +39,16 @@ test('online progress submits serialized intents and never an optimistic profile
   assert.deepEqual(sent[0].payload,{id:'rod'});assert.ok(sent.every(v=>!('profile'in v)&&v.rulesVersion===1));assert.equal(app.bridge.getState().energy,0);
   assert.equal(app.requests.filter(r=>r.url.endsWith('/profile')).length,0);
 });
+test('HTTP mobile browser without randomUUID can save, chat and attack with distinct UUIDs',async()=>{
+  const app=await fixture({mobileHttp:true});
+  await app.bridge.perform({type:'settings',payload:{settings:{sound:false}}});
+  const saved=JSON.parse(app.requests.find(r=>r.url.endsWith('/actions')).options.body).requestId;
+  app.bridge.action({kind:'basic',targetId:'home:enemy:1'});
+  app.bridge.action({kind:'skill',index:0});
+  const ids=[saved,...app.socket.sent.filter(m=>m.type==='basic'||m.type==='skill').map(m=>m.requestId)];
+  assert.equal(new Set(ids).size,3);
+  assert.ok(ids.every(id=>/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)));
+});
 test('an uncertain action keeps the exact receipt identity and revision when retried',async()=>{
   const app=await fixture({failFirstAction:true}),pending=app.bridge.perform({type:'buy',payload:{id:'rod'}});await flush();
   const first=app.requests.find(r=>r.url.endsWith('/actions')).options.body;
@@ -57,7 +68,7 @@ test('selecting an explorer offers a friend request addressed by immutable playe
   const sent=app.requests.find(r=>r.url.endsWith('/friends/request'));assert.deepEqual(JSON.parse(sent.options.body),{id:'bob'});
 });
 
-async function fixture({failFirstAction=false,responseFor}={}){
+async function fixture({failFirstAction=false,responseFor,mobileHttp=false}={}){
   let session=sessionFor(),state=newGame('Offline'),language='en',timerId=0;
   const document=new Element(),window=new Element(),body=new Element(),slot=new Element(),timers=new Map(),sockets=[],requests=[],notices=[],visits=[],languageListeners=[],storage=new Map(),spawned=[];
   document.body=body;document.createElement=tag=>Object.assign(new Element(tag),{ownerDocument:document});document.createTextNode=textContent=>Object.assign(new Element('text'),{textContent});document.querySelector=selector=>selector==='#social-slot'?slot:null;
@@ -71,8 +82,9 @@ async function fixture({failFirstAction=false,responseFor}={}){
     message(data){this.listeners.get('message')?.({data:JSON.stringify(data)});}
     close(code=1000){this.readyState=3;this.listeners.get('close')?.({code});}
   }
-  const world=new Proxy({},{get:(object,key)=>Reflect.get(object,key)??(()=>{})}),bridge={getState:()=>state,getPresence:()=>({planet:state.planet,x:0,z:0}),getWorld:()=>world,getOfflineState:()=>newGame('Offline'),setPersistence(){},setActionHandler(fn){this.perform=fn;},applyAuthoritativeState(value){state=value;},clearNetworkDrops(){spawned.length=0;},spawnNetworkDrop(drop){spawned.push(drop);},removeNetworkDrop(){},releaseNetworkDrop(){},applyAuthorityHealth(){},setNetworkHooks(){},applyState:value=>{state=value;},showNotice:text=>notices.push(text),setVisiting:(...args)=>visits.push(args),onFrame(fn){this.frame=fn;},onAction(){}};
-  const exports={};vm.runInNewContext(compiled,{exports,document,window,clearTimeout,setTimeout,URL,structuredClone,crypto:{randomUUID},location:{href:'https://game.example/',protocol:'https:'},localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},WebSocket:Socket,require:name=>name==='./i18n.ts'?i18n:name==='./gameplay-controls.ts'?{gameplayKey}:{newGame,parseSave},fetch:async(url,options)=>{requests.push({url,options});if(url.endsWith('/actions')&&failFirstAction){failFirstAction=false;throw new Error('Connection reset');}const response=await responseFor?.(url,options,session);if(response)return response;return {ok:true,json:async()=>url.includes('/auth/')?structuredClone(session):url.endsWith('/actions')?{ok:true,authorityVersion:1,profile:structuredClone(session.profile),revision:++session.revision,result:true}:{ok:true}};}});
+  const world=new Proxy({},{get:(object,key)=>Reflect.get(object,key)??(()=>{})}),bridge={getState:()=>state,getPresence:()=>({planet:state.planet,x:0,z:0}),getWorld:()=>world,getOfflineState:()=>newGame('Offline'),setPersistence(){},setActionHandler(fn){this.perform=fn;},applyAuthoritativeState(value){state=value;},clearNetworkDrops(){spawned.length=0;},spawnNetworkDrop(drop){spawned.push(drop);},removeNetworkDrop(){},releaseNetworkDrop(){},applyAuthorityHealth(){},setNetworkHooks(){},applyState:value=>{state=value;},showNotice:text=>notices.push(text),setVisiting:(...args)=>visits.push(args),onFrame(fn){this.frame=fn;},onAction(fn){this.action=fn;}};
+  let entropy=0;const browserCrypto=mobileHttp?{getRandomValues(bytes){for(let i=0;i<bytes.length;i++)bytes[i]=++entropy&255;return bytes;}}:{randomUUID};
+  const exports={};vm.runInNewContext(compiled,{exports,document,window,clearTimeout,setTimeout,URL,structuredClone,crypto:browserCrypto,location:{href:mobileHttp?'http://125.140.196.226:8787/':'https://game.example/',protocol:mobileHttp?'http:':'https:'},localStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},WebSocket:Socket,require:name=>name==='./house.ts'?{INDOOR_Y}:name==='./i18n.ts'?i18n:name==='./gameplay-controls.ts'?{gameplayKey}:{newGame,parseSave},fetch:async(url,options)=>{requests.push({url,options});if(url.endsWith('/actions')&&failFirstAction){failFirstAction=false;throw new Error('Connection reset');}const response=await responseFor?.(url,options,session);if(response)return response;return {ok:true,json:async()=>url.includes('/auth/')?structuredClone(session):url.endsWith('/actions')?{ok:true,authorityVersion:1,profile:structuredClone(session.profile),revision:++session.revision,result:true}:{ok:true}};}});
   exports.initOnline(bridge);await flush();slot.children[0].click();
   const all=()=>elements(body),find=name=>all().find(node=>node.name===name),button=label=>{const node=all().find(node=>node.tagName==='button'&&node.textContent===label);assert.ok(node,`Missing button ${label}`);return node;};
   const join=({party=null,planet='home',socket=sockets.at(-1)}={})=>socket.message({type:'joined',host:session.account?.id,planet,party,room:`${party||'public'}:${planet}`,players:session.account?[session.account]:[]});
@@ -250,4 +262,21 @@ test('an older reconnect response cannot replace the account loaded by a newer r
   let release,sessionCalls=0;const app=await fixture({responseFor:url=>{if(url.endsWith('/auth/session')&&++sessionCalls===2)return new Promise(resolve=>{release=resolve;});}});
   app.button('🏡 Account').click();const reconnect=app.button('Reconnect'),first=reconnect.click();await flush();app.setSession(sessionFor('bob'));await reconnect.click();
   release({ok:true,json:async()=>sessionFor('alice')});await first;assert.equal(app.bridge.getState().name,'bob');
+});
+
+test('combat visuals and accepted actions are independent and stale-space packets are ignored',async()=>{
+  const app=await fixture(),actions=[],effects=[];
+  app.bridge.getWorld().playRemoteAction=(...args)=>actions.push(args);app.bridge.applyRemoteEffect=effect=>effects.push(effect);
+  const packet={by:'bob',space:'home:alice',planet:'home',indoor:false};
+  app.socket.message({...packet,type:'effect',visual:{kind:'arc'}});
+  app.socket.message({...packet,type:'playerAction',action:'skill',index:0,weapon:'sword'});
+  assert.equal(effects.length,1);assert.equal(actions.length,1);assert.equal(actions[0][1],'skill');assert.equal(actions[0][2],0);
+  for(const mismatch of [{space:'home:bob'},{planet:'ice'},{indoor:true}]){
+    app.socket.message({...packet,...mismatch,type:'effect',visual:{kind:'arc'}});
+    app.socket.message({...packet,...mismatch,type:'playerAction',action:'basic'});
+  }
+  assert.equal(effects.length,1);assert.equal(actions.length,1);
+  app.bridge.action({kind:'basic',targetId:'enemy'});app.bridge.action({kind:'skill',index:2});app.bridge.action({kind:'effect',effect:{kind:'arc'}});
+  assert.equal(app.socket.sent.filter(m=>m.type==='basic').length,1);assert.equal(app.socket.sent.filter(m=>m.type==='skill').length,1);
+  assert.equal(app.socket.sent.filter(m=>m.type==='effect').length,0,'predicted local effects must not duplicate server effects');
 });

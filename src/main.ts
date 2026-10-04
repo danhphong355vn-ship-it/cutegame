@@ -12,7 +12,7 @@ import { Box3, Vector3 } from 'three';
 import { World, type Entity, type Enemy } from './world.ts';
 import { dogCoatOf } from './dog-world.ts';
 import { dogFollows } from './guard-dog.ts';
-import { refinedAssets, sceneryKit, cropKit, fishKit, heroKit, spaceKit, wildsKit, brightKit, harshKit, dressingKit, KIT_FILES } from './assets.ts';
+import { refinedAssets, sceneryKit, cropKit, fishKit, heroKit, disguiseKit, wearKit, weaponKit, petKit, spaceKit, wildsKit, brightKit, harshKit, dressingKit, KIT_FILES } from './assets.ts';
 import { onArtLoaded } from './art-retry.ts';
 import { LateArtQueue } from './late-art.ts';
 import { parseHouse } from './house-activities.ts';
@@ -60,6 +60,7 @@ import { Sfx, type Sound } from './sfx.ts';
 import { loadGraphics, saveGraphics, QUALITY, type QualitySetting } from './graphics.ts';
 import { frameSteps } from './frame-steps.ts';
 import { createDrops } from './drops-view.ts';
+import { DROP } from './drops.ts';
 import { Minimap } from './minimap.ts';
 import { produceLots, sellProduce, upgradeCards } from './item-views.ts';
 import './item-views.css';
@@ -190,15 +191,20 @@ app.innerHTML = `
   <div id="toasts" role="status" aria-live="polite"></div><div id="floating-text"></div><div id="damage-flash"></div>
 `;
 const refreshStaticLanguage=bindLanguage(app), refreshWorldLanguage=bindLanguage($('#world'));
-// Scenery is batched when a world is built, so give the small scenery kit a moment
-// to arrive first. A slow connection starts with the simple shapes instead.
+// Keep the first visit on a loading screen until the shared character and world models
+// have either loaded or exhausted their quick retries. Failed optional art keeps its fallback.
 $('#title-screen').inert=true;
-await Promise.race([Promise.all([sceneryKit.load(),wildsKit.load()]),new Promise(resolve=>setTimeout(resolve,4000))]);
+const loadingScreen=document.getElementById('loading-screen');
+const loadingProgress=document.getElementById('loading-progress');
+const initialKits=[sceneryKit,wildsKit,heroKit,disguiseKit,wearKit,weaponKit,petKit,cropKit,fishKit];
+let loadedKits=0;
+await Promise.all(initialKits.map(async kit=>{try{await kit.load();}catch{ /* A missing optional model keeps its procedural stand-in. */ }finally{loadedKits++;if(loadingProgress)loadingProgress.style.width=`${Math.round(loadedKits/initialKits.length*100)}%`;}}));
 $('#title-screen').inert=false;
 const graphics=loadGraphics(state.settings.lowGraphics);
 let world: World;
 try { world = new World($('#world'), state, { antialias: !(graphics.mobile && devicePixelRatio >= 2) }); }
 catch (error) { app.innerHTML = localizeHtml('<div class="fatal"><h1>Your garden needs WebGL</h1><p>Enable hardware acceleration in your browser, then reload this page.</p><p>Your saved adventure is safe.</p></div>'); throw error; }
+if(loadingScreen)loadingScreen.hidden=true;
 initDockFraming(world.camera); // desktop menus dock right; slide the picture so the hero stays clear (dialog-dock.ts)
 // Your guard dog: none while visiting someone else's garden (it stays at your own pen).
 world.ownDog=()=>visiting?null:dogCoatOf(state);
@@ -552,11 +558,105 @@ function plotDialog(index:number) {
   }).join('')}</div>`,'YOUR GARDEN');
 }
 function inventory() {
-  const entries=Object.entries(state.bag).filter(([id,n])=>n!>0&&(bagMode!=='wardrobe'||wardrobeItem(M.ITEMS[id]))) as [M.ItemId,number][];
-  const slots:[M.GearSlot,string,string][]=[['weapon','⚔️','Weapon'],['hat','👒','Hat'],['outfit','🧥','Outfit'],['boots','👟','Boots'],['pet','🐾','Pet'],['disguise','🎭','Disguise']];
-  if(selectedItem&&!state.bag[selectedItem])selectedItem=null;
-  const item=selectedItem?M.ITEMS[selectedItem]:null,stats=M.activeStats(state),slot=item?.slot;
-  openDialog('bag','Your explorer & backpack',`<div class="stat-strip"><span>❤️ <b>${Math.ceil(state.hp)}/${Math.round(stats.maxHp)}</b></span><span>⚔️ <b>${stats.attack.toFixed(1)}</b></span><span>🛡️ <b>${stats.defense}</b></span><span>💨 <b>${stats.speed.toFixed(1)}</b></span><span>✨ <b>${Math.round(stats.critChance*100)}% crit</b></span></div><div class="equipment">${slots.map(([key,icon,name])=>`<div><button data-action="inspect" data-item="${state.gear[key]||''}" ${!state.gear[key]?'disabled':''}><span>${state.gear[key]?art(state.gear[key]!,M.ITEMS[state.gear[key]!].icon):icon}</span><small>${state.gear[key]?esc(t(M.ITEMS[state.gear[key]!].name))+M.levelTag(state,state.gear[key]!):name}</small></button>${state.gear[key]&&!autoHeld(state.gear[key]!)?`<button class="unequip" data-action="unequip" data-slot="${key}" aria-label="Unequip ${name}">Remove</button>`:''}</div>`).join('')}</div><div class="section-label">${bagMode==='wardrobe'?'TO WEAR':'BACKPACK'} <span>${entries.reduce((n,[,q])=>n+q,0)} items</span></div>${IG.groupedHtml('bag',IG.groupItems(entries,([id])=>id,IG.BAG_ORDER,undefined,id=>M.ownedScore(state,id)),([id,count])=>`<button class="item-tile ${id===selectedItem?'selected':''}" data-action="inspect" data-item="${id}" aria-label="${esc(t(M.ITEMS[id].name))}, ${count}"><span>${art(id,M.ITEMS[id].icon)}</span><b>${count}</b><small>${esc(t(M.ITEMS[id].name))}${M.levelTag(state,id)}</small>${Object.values(state.gear).includes(id)?'<i>Equipped</i>':''}</button>`,'inventory-grid')||'<div class="empty-state"><span>🎒</span><strong>Your first harvest belongs here.</strong></div>'}${item?`<div class="item-detail"><span class="item-hero">${art(selectedItem!,item.icon)}</span><div><h3>${esc(t(item.name))}${M.levelTag(state,selectedItem!)}</h3>${M.powerChip(selectedItem!,state)}${M.gearProgressHtml(state,selectedItem!)}<p>${esc(item.desc)}</p><div class="button-row">${slot&&autoHeld(selectedItem!)?'<span class="chip">Used automatically near ponds</span>':slot?`<button class="primary" data-action="equip" data-item="${selectedItem}" ${state.gear[slot]===selectedItem?'disabled':''}>${state.gear[slot]===selectedItem?'Equipped':'Equip'}</button>`:''}${slot&&state.gear[slot]!==selectedItem?tryOnButton(selectedItem!):''}${item.heal||item.buff?`<button class="primary" data-action="eat" data-item="${selectedItem}">Use${item.heal?` · +${item.heal} HP`:''}</button>`:''}${item.weapon&&item.weapon.kind!=='rod'?`<button class="soft-button" data-action="forge-menu" data-item="${selectedItem}">🔨 Forge +${M.forgeLevel(state,selectedItem!)}</button>`:''}${M.looseQuantity(state,selectedItem!)>0?`<button class="soft-button" data-action="drop-item" data-item="${selectedItem}">Drop one</button>`:''}${item.type==='decor'||item.type==='placeable'?`<button class="primary" data-action="place-decor" data-item="${selectedItem}">Place</button>`:''}</div></div></div>`:''}${bagMode==='wardrobe'?'':'<div class="button-row"><button class="soft-button" data-action="go" data-kind="cook">🔥 Kitchen</button><button class="soft-button" data-action="decorations">🏡 Decorate</button><button class="soft-button" data-action="journal-tab" data-kind="collection">🐟 Fish log</button></div>'}`,'CHARACTER');
+  const entries = Object.entries(state.bag).filter(([id, n]) => n! > 0 && (bagMode !== 'wardrobe' || wardrobeItem(M.ITEMS[id]))) as [M.ItemId, number][];
+  const slots: [M.GearSlot, string, string][] = [
+    ['weapon', '🗡️', 'Vũ khí'],
+    ['hat', '🎩', 'Mũ'],
+    ['outfit', '👕', 'Áo'],
+    ['boots', '👟', 'Giày'],
+    ['pet', '🐾', 'Thú cưng'],
+    ['disguise', '🎭', 'Cải trang']
+  ];
+  if (selectedItem && !state.bag[selectedItem] && !Object.values(state.gear).includes(selectedItem)) selectedItem = null;
+  if (!selectedItem) selectedItem = entries[0]?.[0] || (Object.values(state.gear).filter(Boolean)[0] as M.ItemId) || null;
+
+  const item = selectedItem ? M.ITEMS[selectedItem] : null;
+  const stats = M.activeStats(state);
+  const slot = item?.slot;
+
+  const tier = (state as any).bagTier || 0;
+  const totalSlots = 20 + tier * 4;
+
+  const equipHtml = slots.map(([key, icon, name]) => {
+    const gearId = state.gear[key];
+    const equipped = !!gearId;
+    return `<button class="dark-equip-btn ${equipped ? 'equipped' : 'empty'}" data-action="inspect" data-item="${gearId || ''}"><div class="slot-box">${equipped ? `<span>${art(gearId!, M.ITEMS[gearId!].icon)}</span>` : `<span class="slot-placeholder">${icon}</span>`}</div><small>${name}</small></button>`;
+  }).join('');
+
+  const statStripHtml = `<div class="dark-stat-strip"><span>❤️ <b>${Math.ceil(state.hp)}/${Math.round(stats.maxHp)}</b></span><span>👊 <b>${stats.attack.toFixed(1)}</b></span><span>🛡️ <b>${stats.defense}</b></span><span>💥 <b>${Math.round(stats.critChance * 100)}%</b></span></div>`;
+
+  let detailHtml = '';
+  if (item && selectedItem) {
+    let cat = 'Vật phẩm';
+    if (item.type === 'crop') cat = 'Nông sản';
+    else if (item.slot === 'weapon') cat = 'Vũ khí';
+    else if (item.slot === 'hat') cat = 'Mũ';
+    else if (item.slot === 'outfit') cat = 'Trang phục';
+    else if (item.slot === 'boots') cat = 'Giày';
+    else if (item.slot === 'pet') cat = 'Thú cưng';
+    else if (item.slot === 'disguise') cat = 'Cải trang';
+    else if (item.type === 'fish') cat = 'Thủy sản';
+    else if (item.type === 'seed') cat = 'Hạt giống';
+
+    let effect = '';
+    if (item.heal) effect = `❤️ Hồi ${item.heal}`;
+    else if (item.buff) effect = effectText(item);
+    else if (M.powerChip(selectedItem, state)) effect = M.powerChip(selectedItem, state);
+
+    const isEquipped = slot && state.gear[slot] === selectedItem;
+    let buttons = '';
+    if (item.heal || item.buff) {
+      buttons += `<button class="dark-btn-eat" data-action="eat" data-item="${selectedItem}">Ăn</button>`;
+      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+    } else if (slot) {
+      if (isEquipped) {
+        buttons += `<button class="dark-btn-unequip" data-action="unequip" data-slot="${slot}">Tháo ra</button>`;
+      } else {
+        buttons += `<button class="dark-btn-equip" data-action="equip" data-item="${selectedItem}">Trang bị</button>`;
+        if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+      }
+    } else if (item.type === 'decor' || item.type === 'placeable') {
+      buttons += `<button class="dark-btn-equip" data-action="place-decor" data-item="${selectedItem}">Đặt</button>`;
+      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+    } else {
+      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+    }
+
+    detailHtml = `<div class="dark-detail-card"><div class="dark-detail-hero">${art(selectedItem, item.icon)}</div><div class="dark-detail-info"><div class="dark-detail-title">${esc(t(item.name))}${M.levelTag(state, selectedItem)}</div><div class="dark-detail-sub">${cat} • Bán ⚡ ${M.sellPrice(state, selectedItem) || item.sell || 0}</div><div class="dark-detail-desc">${esc(t(item.desc))}</div>${effect ? `<div class="dark-detail-effect">${effect}</div>` : ''}<div class="dark-detail-actions">${buttons}</div></div></div>`;
+  }
+
+  const gridItemsHtml = entries.map(([id, count]) => {
+    const isSelected = id === selectedItem;
+    return `<button class="dark-grid-slot ${isSelected ? 'selected' : ''}" data-action="inspect" data-item="${id}"><span class="slot-art">${art(id, M.ITEMS[id].icon)}</span>${count > 1 ? `<b class="slot-count">${count}</b>` : ''}</button>`;
+  }).join('');
+
+  const emptyCount = Math.max(0, totalSlots - entries.length);
+  let emptySlotsHtml = '';
+  for (let i = 0; i < emptyCount; i++) {
+    emptySlotsHtml += `<div class="dark-grid-slot empty"></div>`;
+  }
+
+  const maxTier = 5;
+  const costEnergy = 200 * (tier + 1);
+  const costWood = 8 * (tier + 1);
+  const costWheat = 2 * (tier + 1);
+  const costStar = tier + 1;
+  const haveWood = (state.bag['wood'] || 0) + (state.chest['wood'] || 0);
+  const cropId = (state.bag['wheat'] || 0) >= costWheat ? 'wheat' : 'radish';
+  const haveWheat = (state.bag[cropId] || 0) + (state.chest[cropId] || 0);
+  const starId = (state.bag['starshard'] || 0) >= costStar ? 'starshard' : 'star';
+  const haveStar = (state.bag[starId] || 0) + (state.chest[starId] || 0);
+  const canExpand = tier < maxTier && state.energy >= costEnergy && haveWood >= costWood && haveWheat >= costWheat && haveStar >= costStar;
+
+  const expandHtml = `<div class="dark-expand-card"><div class="dark-expand-icon">🎒</div><div class="dark-expand-body"><div class="dark-expand-title">Mở rộng Túi đồ <span class="dark-expand-badge">${totalSlots} ô</span></div><div class="dark-expand-sub">Bậc ${tier + 1}/${maxTier}: thêm 4 Ô (${totalSlots} → ${totalSlots + 4}). Nguyên liệu lấy trong túi đồ.</div><div class="dark-expand-cost"><span>⚡ ${costEnergy}</span><span>🪵 ${haveWood}/${costWood}</span><span>🌾 ${haveWheat}/${costWheat}</span><span style="${haveStar < costStar ? 'color:#f87171;' : ''}">⭐ ${haveStar}/${costStar}</span></div></div><button class="dark-expand-btn" data-action="expand-bag" ${canExpand ? '' : 'disabled'}>Mở rộng</button></div>`;
+
+  const footerStatsHtml = `<div class="dark-stats-footer"><span>⚔️ Hạ gục <b>${state.counters?.kills || (state.progression as any)?.totals?.kill || 0}</b></span><span>🌾 Thu hoạch <b>${state.counters?.harvests || (state.progression as any)?.totals?.harvest || 0}</b></span><span>🐟 Câu được <b>${state.counters?.fish || (state.progression as any)?.totals?.fish || 0}</b></span></div>`;
+
+  const planetBtnHtml = `<button class="dark-planet-btn" data-action="discovery">📖 Bộ sưu tập các hành tinh</button>`;
+
+  const body = `<div class="dark-bag-theme"><div class="dark-equipment-row">${equipHtml}</div>${statStripHtml}${detailHtml}<div class="dark-inv-grid">${gridItemsHtml}${emptySlotsHtml}</div>${expandHtml}${footerStatsHtml}${planetBtnHtml}</div>`;
+
+  openDialog('bag', '🎒 Túi đồ & Trang bị', body, 'MAKE YOURSELF AT HOME');
 }
 // "36 energy · 6 XP · 15 stars" becomes three coloured chips.
 function rewardChips(label:string){return label.split(' · ').filter(Boolean).map(part=>{const kind=/energy|năng lượng/i.test(part)?'energy':/xp/i.test(part)?'xp':/star|sao/i.test(part)?'star':'';return `<span class="chip${kind?` chip-${kind}`:''}">${kind==='energy'?'ϟ ':kind==='xp'?'✨ ':kind==='star'?'⭐ ':''}${esc(kind?part.replace(/\s*(energy|stars?|năng lượng|sao)$/i,''):part)}</span>`;}).join('');}
@@ -1003,14 +1103,25 @@ world.onInteract=async(e)=>{
   else if(e.kind==='gift'){if(e.index===undefined)return;const outcome=await perform<M.GiftOutcome>('claimGift',{index:e.index!});if(!outcome)return;e.mesh.visible=false;if(outcome.kind==='bomb'){for(const target of world.enemies)if(target.hp>0&&Math.hypot(target.x-e.x,target.z-e.z)<(outcome.radius??4.5))hit(target,Math.round(M.attack(state)*(outcome.damageMultiplier??3)));world.burst(e.x,e.z,'#ffb269',28);checkDefeat();}toast(outcome.label,'🎁');}
 };
 // Loot lands on the ground (drops.ts) and reaches the bag through the pickup magnet, with a '+n name' float.
+const foreignDropNotified=new Set<string>();
+const claimRetryAt=new Map<string,number>();
+let claimPauseUntil=0;
 const drops=createDrops(world,{layer:$('#world-labels'),alive:()=>state.hp>0&&!world.interior,item:id=>Object.hasOwn(M.ITEMS,id)?M.ITEMS[id]:undefined,
   iconUrl:id=>Object.hasOwn(M.ITEMS,id)&&M.ITEMS[id].type==='decor'?decorIcon(id)||null:iconPath(id)?ICON_BASE+iconPath(id):null,
   canAdd:(id,n)=>Number.isSafeInteger((state.bag[id]??0)+n),onPick:(d,stack)=>{
     const feedback=(id:string,count:number)=>{floating('+'+count+' '+t(M.ITEMS[id].name),world.position.x,world.position.z,'item',stack*.7);tone('coin');};
-    if(actionHandler){const meta=networkDrops.get(d.uid);if(!meta)return;networkDrops.delete(d.uid);const collectingState=state,root=world.root;
-      void perform<{item:string;count:number}>('claimDrop',{ownerId:meta.drop.ownerId,id:meta.drop.id}).then(result=>{
-        if(state!==collectingState||world.root!==root||visiting)return;
-        if(result)feedback(result.item,result.count);else if(meta.drop.expiresAt>Date.now())spawnNetworkDrop(meta.drop,meta.actor);
+    if(actionHandler){const meta=networkDrops.get(d.uid);if(!meta)return;
+      if(meta.drop.ownerId!==meta.actor){if(!foreignDropNotified.has(meta.drop.id)){foreignDropNotified.add(meta.drop.id);toast('This item belongs to another player. You cannot pick it up.','🎒');}return;}
+      networkDrops.delete(d.uid);const collectingState=state,root=world.root,handler=actionHandler;
+      void handler({type:'claimDrop',payload:{ownerId:meta.drop.ownerId,id:meta.drop.id}}).then(reply=>{
+        claimRetryAt.delete(meta.drop.id);
+        const result=reply.result as {item:string;count:number}|undefined;
+        if(state===collectingState&&world.root===root&&!visiting&&result)feedback(result.item,result.count);
+      }).catch(error=>{
+        const message=error instanceof Error?error.message:'';
+        if(message.includes('Please wait'))claimPauseUntil=Date.now()+60_000;
+        claimRetryAt.set(meta.drop.id,Date.now()+(message.includes('Please wait')?60_000:5_000));
+        if(state===collectingState&&world.root===root&&!visiting&&meta.drop.expiresAt>Date.now())spawnNetworkDrop(meta.drop,meta.actor);
       });
     }else if(change(()=>M.addItem(state,d.item,d.count)))feedback(d.item,d.count);
   },
@@ -1019,10 +1130,15 @@ const networkDrops=new Map<number,{drop:NetworkDrop;actor:string}>();
 function spawnNetworkDrop(drop:NetworkDrop,actor:string){
   if(!drop||!M.ITEMS[drop.item]||drop.expiresAt<=Date.now()||drop.planet!==world.planet||visiting||[...networkDrops.values()].some(v=>v.drop.id===drop.id))return;
   const d=drops.spawn(drop.item,drop.count,drop.x,drop.z,{thrown:!!drop.thrown&&drop.owner===actor});if(!d)return;
-  d.vx=d.vz=0;d.life=Math.max(0,(drop.expiresAt-Date.now())/1000);networkDrops.set(d.uid,{drop,actor});
+  d.vx=d.vz=0;d.life=Math.max(0,(drop.expiresAt-Date.now())/1000);d.pickupLocked=drop.ownerId!==actor||Date.now()<Math.max(claimPauseUntil,claimRetryAt.get(drop.id)??0);networkDrops.set(d.uid,{drop,actor});
 }
-function removeNetworkDrop(id:string){for(const [uid,meta]of networkDrops)if(meta.drop.id===id){drops.sim.drops=drops.sim.drops.filter(d=>d.uid!==uid);networkDrops.delete(uid);}}
-frameListeners.add(dt=>{for(const [uid,meta]of networkDrops){const d=drops.sim.drops.find(d=>d.uid===uid);if(!d){networkDrops.delete(uid);continue;}d.pickupLocked=meta.drop.owner!==meta.actor&&Date.now()<meta.drop.releaseAt;}drops.update(dt);});
+function removeNetworkDrop(id:string){claimRetryAt.delete(id);for(const [uid,meta]of networkDrops)if(meta.drop.id===id){drops.sim.drops=drops.sim.drops.filter(d=>d.uid!==uid);networkDrops.delete(uid);}}
+frameListeners.add(dt=>{for(const [uid,meta]of networkDrops){const d=drops.sim.drops.find(d=>d.uid===uid);if(!d){networkDrops.delete(uid);continue;}
+  const foreign=meta.drop.ownerId!==meta.actor;d.pickupLocked=foreign||Date.now()<Math.max(claimPauseUntil,claimRetryAt.get(meta.drop.id)??0)||meta.drop.owner!==meta.actor&&Date.now()<meta.drop.releaseAt;
+  if(foreign&&state.hp>0&&!world.interior&&!foreignDropNotified.has(meta.drop.id)&&Math.hypot(d.x-world.position.x,d.z-world.position.z)<=DROP.fullWarnRange){
+    foreignDropNotified.add(meta.drop.id);toast('This item belongs to another player. You cannot pick it up.','🎒');
+  }
+}drops.update(dt);});
 // Drawn on the next frame's render: a one-frame lag is invisible on a 0.5 m gardener.
 frameListeners.add(dt=>helperView.update(dt,{state:!flight&&world.planet==='home'?world.state:null,act:started&&!visiting&&world.state===state&&!document.hidden,now:Date.now(),harvest:helperHarvest,plant:helperPlant,held:heldBed()}));
 frameListeners.add(dt=>{farmHelperController.sync();farmHelperView.update(dt,{state:!flight&&world.planet==='home'?world.state:null,context:world.root,act:!!farmHelperContext(),pending:farmHelperController.pending,now:Date.now(),position:uid=>world.farmView?.positionOf(uid)??undefined,work:task=>farmHelperController.work(task)});});
@@ -1137,7 +1253,7 @@ function skill(index:number){
   const disguise=state.gear.disguise,weapon=M.weaponStats(state),skills=skillList();
   if(!(disguise?combat.disguise(disguise,index):combat.skill(index,weapon.special??'fist')))return;
   skillDurations[index]=M.skillCooldown(state,index,skills[index].cd,!!disguise)/Math.max(.2,1+M.activeStats(state).haste);cooldowns[index]=skillDurations[index];
-  if(!actionHandler)change(()=>recordEvent(state,'skill'));if(index===0)world.spinT=2.2;else if(index===1)world.fx?.burst(world.position,{n:10,color:'#f3e2bd',size:.14,speed:3,up:2,y:.1});tone(skillSound(index,disguise,weapon.special));emitAction({kind:'skill',index,special:disguise??weapon.special});
+  if(!actionHandler)change(()=>recordEvent(state,'skill'));if(disguise)world.playDisguiseAction(disguise,index);else if(index===0)world.spinT=2.2;else if(index===1)world.fx?.burst(world.position,{n:10,color:'#f3e2bd',size:.14,speed:3,up:2,y:.1});else if(index===3&&(weapon.special??'fist')==='fist')world.startPunchFlurry();tone(skillSound(index,disguise,weapon.special));emitAction({kind:'skill',index,special:disguise??weapon.special});
 }
 let dying=false;
 function checkDefeat(){if(!started||state.hp>0||dying)return false;if(actionHandler){dying=true;void perform('die',{x:world.position.x,z:world.position.z}).then(()=>{dying=false;endFishing();resetCombat();rebuildHomePresentation('home');world.refreshPlayer();toast('You are safe at home.','🏡');});return true;}endFishing();resetCombat();change(()=>M.die(state,world.position.x,world.position.z));rebuildHomePresentation('home');world.refreshPlayer();openDialog('death','A little rest, then try again',`<div class="grow-illustration">🌷</div><p class="center">You’re safe at home. Your level, energy, and equipped gear are safe too.</p><p class="center muted">${state.dropped?'Your loose items are waiting where you fell.':'Nothing was dropped.'}</p><button class="primary wide" data-action="close">Back on my feet →</button>`,'EVERY EXPLORER TAKES A TUMBLE');return true;}
@@ -1152,7 +1268,7 @@ world.onDamage=(amount,source='melee',enemyId)=>{
 };
 world.onHazardEnemy=(enemy,damage)=>hit(enemy,damage,0,undefined,true,true);
 world.onEnvironmentEvent=event=>{if(event.message)toast(event.message,'🌍');save();updateHud();};
-function resetCombat(){combat.reset();combatTimers.reset();combatView.clear();skillFx.clear();world.movementLocked=false;world.playerFlying=false;world.playerStealth=false;}
+function resetCombat(){combat.reset();combatTimers.reset();combatView.clear();skillFx.clear();world.flurryT=world.flurryHits=0;world.movementLocked=false;world.playerFlying=false;world.playerStealth=false;}
 
 function rebuildHomePresentation(planet:M.PlanetId){
   const shared=network.role&&world.planet===planet, enemies=shared?world.enemySnapshots():null,environment=shared?world.environmentSnapshot():null;
@@ -1171,7 +1287,7 @@ export const gameBridge:GameBridge={
     const beforeLevel=state.level;const current=state as unknown as Record<string,unknown>;for(const key of Object.keys(current))if(!Object.hasOwn(next,key))delete current[key];Object.assign(state,next);if(wasFishing&&!planetChanged){const rod=contextGear.forFishing(state);if(rod)state.gear.weapon=rod;}else if(!planetChanged&&gearWater&&heldRod&&(state.bag[heldRod]??0)>0)state.gear.weapon=heldRod;const gearChanged=JSON.stringify(state.gear)!==previousGear;levelCheck(beforeLevel);if(planetChanged){visiting=null;visitHome=null;world.state=state;endFishing();resetCombat();world.build(state.planet);world.refreshPlayer();if(wasDead)toast('You are safe at home.','🏡');}if(!visiting){world.state=state;if(plotsChanged){const position=world.position.clone();rebuildHomePresentation(state.planet);world.position.copy(position);}else{world.syncCrops();if(decorChanged)world.syncDecorations();}if(gearChanged)world.refreshPlayer();world.syncDropped();}
     updateHud();updateLabels();
   },
-  spawnNetworkDrop,removeNetworkDrop,releaseNetworkDrop(id){for(const meta of networkDrops.values())if(meta.drop.id===id)meta.drop.releaseAt=0;},clearNetworkDrops(){networkDrops.clear();drops.clear();},
+  spawnNetworkDrop,removeNetworkDrop,releaseNetworkDrop(id){for(const meta of networkDrops.values())if(meta.drop.id===id)meta.drop.releaseAt=0;},clearNetworkDrops(){networkDrops.clear();claimRetryAt.clear();foreignDropNotified.clear();drops.clear();},
   applyAuthorityHealth(delta,died){if(delta<0){world.hurtFeedback(-delta);tone('hurt');if(fishGame)endFishing('The fish got away when you were hit.');}if(died){visiting=null;visitHome=null;world.state=state;endFishing();resetCombat();world.build(state.planet);world.refreshPlayer();closeDialog();toast('You are safe at home.','🏡');}updateHud();},
   setNetworkHooks(hooks){network=hooks;world.networkRole=hooks.role;},
   applyRemoteHit(id,damage,stun=0,impact){const enemy=world.enemies.find(e=>e.id===id);if(enemy)hit(enemy,damage,stun,impact,true);},
@@ -1194,6 +1310,18 @@ export const gameBridge:GameBridge={
     world.refreshPlayer();$('#visit-banner').hidden=!owner;$('#visit-banner').textContent=t(owner?t('Visiting {owner} · look around their garden',{owner}):'');updateLabels();
   },
   showNotice:message=>toast(message),
+  showChatBubble:(id, text)=>{
+    let pos;
+    if(id===world.localPlayerId)pos=world.position;
+    else{const r=world.remotePlayers.get(id);if(r)pos=r.pose;}
+    if(pos&&world.fx){
+      const y=(pos.y||0)+1.8;
+      world.fx.text({x:pos.x,y,z:pos.z}, text, 'chat-bubble', () => {
+        if(id===world.localPlayerId) return world.position;
+        const r=world.remotePlayers.get(id); return r ? r.pose : undefined;
+      });
+    }
+  },
   onFrame(listener){frameListeners.add(listener);return()=>frameListeners.delete(listener);},
   onAction(listener){actionListeners.add(listener);return()=>actionListeners.delete(listener);},
 };
@@ -1308,7 +1436,31 @@ app.addEventListener('click',async event=>{
     case 'craft-back':crafting();break;
     case 'forge':{button.disabled=true;const result=await perform<M.ForgeOutcome>('forge',{id});if(result){toast(result.success?t('Forged to +{level}!',{level:result.level}):'The forge attempt failed. Your weapon kept its level.',result.success?'✨':'🔨');tone(result.success?'level':'pop');}forgeMenu(id);break;}
     case 'drop-item':{if(actionHandler)await perform('dropItem',{id,count:1});else if(M.looseQuantity(state,id)>0){change(()=>M.removeItem(state.bag,id));drops.spawn(id,1,world.position.x,world.position.z,{thrown:true,dir:world.facing});}inventory();break;}
-    case 'close':closeDialog();break;case 'bag':bagMode='bag';inventory();break;case 'inspect':if(id){selectedItem=id;inventory();}break;case 'quests':quests();break;case 'map':map();break;case 'settings':settings();break;case 'keys-guide':keysGuide.toggle();updateHud();break;case 'trackers':trackerMode=$('.tracker-stack').classList.contains('folded')?'open':'fold';updateHud();break;case 'help':help();break;case 'fullscreen':void toggleFullscreen(message=>toast(message));break;
+    case 'close':closeDialog();break;case 'bag':bagMode='bag';inventory();break;
+    case 'expand-bag':{
+      const tier=(state as any).bagTier||0;
+      if(tier>=5){toast('Túi đồ đã đạt sức chứa tối đa!','🎒');break;}
+      const costEnergy=200*(tier+1),costWood=8*(tier+1),costWheat=2*(tier+1),costStar=tier+1;
+      const haveWood=(state.bag['wood']||0)+(state.chest['wood']||0);
+      const cropId=(state.bag['wheat']||0)>=costWheat?'wheat':'radish';
+      const haveWheat=(state.bag[cropId]||0)+(state.chest[cropId]||0);
+      const starId=(state.bag['starshard']||0)>=costStar?'starshard':'star';
+      const haveStar=(state.bag[starId]||0)+(state.chest[starId]||0);
+      if(state.energy<costEnergy||haveWood<costWood||haveWheat<costWheat||haveStar<costStar){
+        toast('Chưa đủ nguyên liệu để mở rộng túi đồ!','🎒');
+        break;
+      }
+      state.energy-=costEnergy;
+      M.usePantry(state,'wood',costWood);
+      M.usePantry(state,cropId,costWheat);
+      M.usePantry(state,starId,costStar);
+      (state as any).bagTier=tier+1;
+      save();tone('success');
+      toast(`Đã mở rộng túi đồ lên ${20+(tier+1)*4} ô!`,'✨');
+      inventory();
+      break;
+    }
+    case 'inspect':if(id){selectedItem=id;inventory();}break;case 'quests':quests();break;case 'map':map();break;case 'settings':settings();break;case 'keys-guide':keysGuide.toggle();updateHud();break;case 'trackers':trackerMode=$('.tracker-stack').classList.contains('folded')?'open':'fold';updateHud();break;case 'help':help();break;case 'fullscreen':void toggleFullscreen(message=>toast(message));break;
     case 'claim':if(await perform('claimQuest')){tone('success');toast('A little milestone. A lovely reward!','🎁');if(modal)quests();}break;
     case 'plant':{const i=activePlot,opened=modal,root=world.root,taken=state.plots[i]?.crop;if(taken){toast(t('This bed already grows {crop}.',{crop:t(M.CROPS[taken].name)}),'🌱');refreshPlot();break;}if(await perform('plant',{index:i,id})&&world.root===root&&!visiting){plantBurst(i);tone('pop');world.syncCrops();if(modal===opened&&activePlot===i)closeDialog();toast(`${t(M.CROPS[id as M.CropId].name)} planted. Let the sunshine do its thing.`,'🌱');}break;}
     case 'cook-everything':{let made=0;for(const id of M.pantryIds(state).filter(id=>M.ITEMS['cooked_'+id])){const n=M.pantry(state,id);if(n>0&&await perform('cook',{id,count:n}))made+=n;}if(made){tone('success');toast(t('Cooked {count} meals. Enjoy!',{count:made}),'🍲');}cooking();break;}

@@ -68,7 +68,7 @@ export interface Enemy { windupTotal?:number;enraged?:boolean;lastHitAt?:number;
 export const bossCooldownScale=(e:{boss:boolean;hp:number;maxHp:number;enraged?:boolean})=>e.boss?(e.hp<e.maxHp*.5?.7:1)*(e.enraged?.6:1):1;
 export interface AvatarVisual {size:number;stealth:boolean;shield:boolean;flight:number;bat:boolean}
 export interface Enemy {titanAttacks?:TitanAttack[];titanLift?:number}
-export interface RemotePose {/** The breed of the guard dog following this explorer (server-set; absent when it stays at its pen). */dog?:number|null;visual?:Partial<AvatarVisual>;id?:string;x:number;z:number;y?:number;facing?:number;color?:string;name?:string;planet?:PlanetId;moving?:boolean;gear?:SaveState['gear'];look?:LookId;hp?:number;level?:number}
+export interface RemotePose {/** The breed of the guard dog following this explorer (server-set; absent when it stays at its pen). */dog?:number|null;visual?:Partial<AvatarVisual>;id?:string;x:number;z:number;y?:number;facing?:number;color?:string;name?:string;planet?:PlanetId;space?:string;moving?:boolean;gear?:SaveState['gear'];look?:LookId;hp?:number;level?:number}
 export interface EnemyShotSnapshot {id:string;x:number;y:number;z:number;vx:number;vz:number;life:number;damage:number;targetEnemyId?:string}
 export interface EnemySnapshot {homeX?:number;homeZ?:number;titanAttacks?:TitanAttack[];titanLift?:number;chaseGrace?:number;id:string;type?:string;x:number;z:number;hp:number;maxHp:number;respawn:number;phase?:string;facing?:number;lift?:number;boss?:boolean;phaseTime?:number;stun?:number;statuses?:Record<string,number>;cooldown?:number;targetX?:number;targetZ?:number;bossStage?:number;skill?:BossSkill;attackCount?:number;skillCount?:number;telegraphs?:Enemy['telegraphs'];skillEffects?:Enemy['skillEffects'];spinTick?:number;damage?:number;shots?:EnemyShotSnapshot[]}
 export interface EnvironmentSnapshot {time:number;lamps:Array<[number,number]>;eclipseUntil?:number;weather?:LavaWeatherSnapshot;nestLevel?:number;fireRain?:EnvironmentSimulation['fireRain'];lightning?:LightningState}
@@ -179,7 +179,7 @@ export class World {
   /** The creature last hit and when: it stays marked for TARGET_HOLD seconds. */
   lastHit?: {e:Enemy;t:number}|null;
   // Player animation timers set by combat and fishing.
-  punchT=0; punchArm=0; swingT=0; aimT=0; hurtT=0; spinT=0; landT=0; castT=0; /** The last tap on a pond's water, for the cast point. */ pondTap:{id:string;x:number;z:number}|null=null; fishing:'idle'|'cast'|'wait'|'fight'='idle';
+  punchT=0; punchArm=0; flurryT=0; flurryHits=0; swingT=0; aimT=0; hurtT=0; spinT=0; landT=0; castT=0; disguiseT=0; disguiseMotion:'cast'|'dash'|'slam'|'strike'|'hover'='cast'; /** The last tap on a pond's water, for the cast point. */ pondTap:{id:string;x:number;z:number}|null=null; fishing:'idle'|'cast'|'wait'|'fight'='idle';
   walkClock=0; weaponKind:'fist'|'sword'|'gun'|'rod'='fist'; pose:{kind:'dash'|'slam';t:number}|null=null; fishTension=0; invulnerable=false;
   private shakeOffset=new T.Vector3();/** Ground distance the view reaches from the camera target (resize). */ viewReach?:number; private playerMaterials:LitMaterial[]=[];private hemi?:T.HemisphereLight;
   canvas: HTMLCanvasElement; state: SaveState;
@@ -581,6 +581,7 @@ export class World {
       for(let attempt=0;attempt<500;attempt++){
         let a=zone?angles[zone]+(rng()-.5)*1.3:rng()*Math.PI*2,d=boss?100+rng()*24:27+rng()*97,x=Math.cos(a)*d,z=Math.sin(a)*d;
         if(planet==='cloud'){const islands=this.environment.layout.islands,isl=islands[1+(enemyIndex%(islands.length-1))];a=rng()*Math.PI*2;d=rng()*(isl.r-3);x=isl.x+Math.cos(a)*d;z=isl.z+Math.sin(a)*d;}
+        if(planet==='home'&&zone&&zoneAt({x,z})!==zone)continue;
         if(this.obstacles.some(o=>Math.hypot(x-o.x,z-o.z)<o.r+def.radius+1)||this.enemies.some(e=>Math.hypot(x-e.x,z-e.z)<(def.titan&&e.boss?25:2.4)))continue;
         if(planet==='lava'&&terrainHeight(this.environment.layout,{x,z})<-.4)continue;
         this.spawnSpecies(type,x,z,spawnIndex);break;
@@ -942,37 +943,85 @@ export class World {
     if(impact.knock&&impact.direction)this.knockEnemy(e,impact.direction.x,impact.direction.z,impact.knock);
     if(impact.lift)this.knockUpEnemy(e,impact.lift,.8);
   }
-  applyEnemySnapshots(snapshots:EnemySnapshot[]){const own=`${this.planet}:`;for(const snapshot of snapshots){if(typeof snapshot.id!=='string'||!snapshot.id.startsWith(own)||!Number.isFinite(snapshot.x)||!Number.isFinite(snapshot.z)||!Number.isFinite(snapshot.hp))continue;let e=this.enemies.find(e=>e.id===snapshot.id);if(!e&&snapshot.type&&ENEMY_TYPES[snapshot.type]){e=this.spawnSpecies(snapshot.type,snapshot.x,snapshot.z,this.enemies.length)??undefined;if(e)e.id=snapshot.id;}if(!e)continue;e.x=snapshot.x;e.z=snapshot.z;e.hp=Math.max(0,snapshot.hp);e.maxHp=snapshot.maxHp;e.respawn=snapshot.respawn;e.phase=snapshot.phase;e.lift=snapshot.lift??0;e.stun=snapshot.stun??0;e.phaseTime=snapshot.phaseTime??0;if(Number.isFinite(snapshot.chaseGrace))e.lastHitAt=this.time-4+Math.max(0,Math.min(4,snapshot.chaseGrace!));e.cooldown=snapshot.cooldown??0;e.statuses={...snapshot.statuses};e.targetX=snapshot.targetX;e.targetZ=snapshot.targetZ;e.bossStage=snapshot.bossStage;e.skill=snapshot.skill;e.attackCount=snapshot.attackCount;e.skillCount=snapshot.skillCount;e.telegraphs=snapshot.telegraphs?.map(p=>({...p}));e.skillEffects=snapshot.skillEffects?.map(p=>({...p}));e.spinTick=snapshot.spinTick;e.damage=snapshot.damage??e.damage;e.titanAttacks=sanitizeTitanAttacks(snapshot.titanAttacks);e.titanLift=snapshot.titanLift??0;e.scaled=true;e.mesh.position.set(e.x,terrainHeight(this.environment.layout,e)+(e.lift??0),e.z);e.mesh.rotation.y=snapshot.facing??0;e.mesh.visible=e.hp>0;
+  applyEnemySnapshots(snapshots:EnemySnapshot[]){const own=`${this.planet}:`;for(const snapshot of snapshots){if(typeof snapshot.id!=='string'||!snapshot.id.startsWith(own)||!Number.isFinite(snapshot.x)||!Number.isFinite(snapshot.z)||!Number.isFinite(snapshot.hp))continue;let e=this.enemies.find(e=>e.id===snapshot.id);if(!e&&snapshot.type&&ENEMY_TYPES[snapshot.type]){e=this.spawnSpecies(snapshot.type,snapshot.x,snapshot.z,this.enemies.length)??undefined;if(e)e.id=snapshot.id;}if(!e)continue;
+        if(this.networkRole!=='host'){e.x=snapshot.x;e.z=snapshot.z;e.phase=snapshot.phase;e.phaseTime=snapshot.phaseTime??0;e.targetX=snapshot.targetX;e.targetZ=snapshot.targetZ;e.mesh.rotation.y=snapshot.facing??0;e.mesh.position.set(e.x,terrainHeight(this.environment.layout,e)+(e.lift??0),e.z);}
+        e.hp=Math.max(0,snapshot.hp);e.maxHp=snapshot.maxHp;e.respawn=snapshot.respawn;e.lift=snapshot.lift??0;e.stun=snapshot.stun??0;if(Number.isFinite(snapshot.chaseGrace))e.lastHitAt=this.time-4+Math.max(0,Math.min(4,snapshot.chaseGrace!));e.cooldown=snapshot.cooldown??0;e.statuses={...snapshot.statuses};e.bossStage=snapshot.bossStage;e.skill=snapshot.skill;e.attackCount=snapshot.attackCount;e.skillCount=snapshot.skillCount;e.telegraphs=snapshot.telegraphs?.map(p=>({...p}));e.skillEffects=snapshot.skillEffects?.map(p=>({...p}));e.spinTick=snapshot.spinTick;e.damage=snapshot.damage??e.damage;e.titanAttacks=sanitizeTitanAttacks(snapshot.titanAttacks);e.titanLift=snapshot.titanLift??0;e.scaled=true;if(this.networkRole==='host')e.mesh.position.y=terrainHeight(this.environment.layout,e)+(e.lift??0);e.mesh.visible=e.hp>0;
       if(snapshot.shots){this.enemyShots??=[];const ids=new Set(snapshot.shots.map(s=>s.id));for(let i=this.enemyShots.length-1;i>=0;i--)if(this.enemyShots[i].ownerId===e.id&&!ids.has(this.enemyShots[i].id)){const old=this.enemyShots[i];this.scene.remove(old.mesh);old.mesh.geometry.dispose();this.enemyShots.splice(i,1);}for(const source of snapshot.shots){if(![source.x,source.y,source.z,source.vx,source.vz,source.life,source.damage].every(Number.isFinite)||source.life<=0)continue;let shot=this.enemyShots.find(s=>s.id===source.id);if(!shot){const electric=e.type==='robot',model=ball(electric?'#e8fbff':e.definition?.accent??'#ffbb72',.17);this.scene.add(model);shot={...source,ownerId:e.id,mesh:model,...(electric?{electric}:{})};this.enemyShots.push(shot);}Object.assign(shot,{vx:source.vx,vz:source.vz,life:source.life,damage:source.damage,targetEnemyId:source.targetEnemyId});shot.mesh.position.set(source.x,source.y,source.z);}}
     }}
   /**
-   * Online explorers walk on their legs too (walk-cycle.ts). Poses arrive about 15 times a second, so the ground they
-   * cover comes in jumps: it is smoothed into a speed that drives the cadence, and the cycle fades out when they stop.
+   * Render each received pose over the 100 ms send interval. Repeated roster refreshes do not restart the blend.
+   * Heading is interpolated separately from the spin animation, and teleports reset the movement history.
    */
   private animateRemotes(dt:number){
     for(const remote of this.remotePlayers?.values()??[]){
       const m=remote.mesh,u=m.userData,g:Gait=u.gait??=newGait(),p=m.position,last=u.lastPos as T.Vector3|undefined;
       const target=remote.pose,indoor=(target.y??0)>=INDOOR_Y-10,ty=(target.y??0)-(indoor?INDOOR_Y:0);
-      if(Math.hypot(p.x-target.x,p.z-target.z)>6||Math.abs(p.y-ty)>5)p.set(target.x,ty,target.z);
-      else p.lerp(new T.Vector3(target.x,ty,target.z),1-Math.exp(-dt*16));
-      const facing=target.facing??0,turn=Math.atan2(Math.sin(facing-m.rotation.y),Math.cos(facing-m.rotation.y));
-      m.rotation.y+=turn*(1-Math.exp(-dt*18));
+      const from=u.poseFrom,blend=Math.min(1,(u.poseAge=(u.poseAge??0)+dt)/.1);
+      if(from){p.set(from.x+(target.x-from.x)*blend,from.y+(ty-from.y)*blend,from.z+(target.z-from.z)*blend);
+        const turn=Math.atan2(Math.sin((target.facing??0)-from.facing),Math.cos((target.facing??0)-from.facing));
+        u.facing=from.facing+turn*blend;
+      }else{p.set(target.x,ty,target.z);u.facing=target.facing??0;}
+      m.rotation.y=u.facing;
       let dist=last?Math.hypot(p.x-last.x,p.z-last.z):0;if(dist>3)dist=0;if(last)last.copy(p);else u.lastPos=p.clone(); // a teleport is not a step
       u.speed=(u.speed??0)+((dt>0?dist/dt:0)-(u.speed??0))*(1-Math.exp(-dt*6));
       const moving=remote.pose.moving??u.speed>.3,leg=HIP*m.scale.x,l=limbsOf(m);
       stepGait(g,moving?Math.max(u.speed,1.5)*dt:0,dt,leg);
-      if(l.legL)l.legL.rotation.x=0;if(l.legR)l.legR.rotation.x=0;if(l.armL)l.armL.rotation.x=0;if(l.armR)l.armR.rotation.x=0;
+      if(l.legL)l.legL.rotation.x=0;if(l.legR)l.legR.rotation.x=0;if(l.armL)l.armL.rotation.set(0,0,-.3);if(l.armR)l.armR.rotation.set(0,0,.3);
       const bob=applyGait(l,g,gaitSwing(u.speed,leg)),body=m.children[0];if(body)body.position.y=bob;
-      if(u.attackT>0){u.attackT=Math.max(0,u.attackT-dt);if(l.armR)l.armR.rotation.x=-1.5*Math.sin((1-u.attackT/.28)*Math.PI);}
-      if(u.spinT>0){u.spinT=Math.max(0,u.spinT-dt);if(l.armL)l.armL.rotation.z=-1.45;if(l.armR)l.armR.rotation.z=1.45;m.rotation.y+=dt*22;}
+      if(u.flurryHits>0&&u.flurryHits<6){u.flurryElapsed=(u.flurryElapsed??0)+dt;
+        while(u.flurryHits<6&&u.flurryElapsed>=u.flurryHits*.14){u.attackT=.25;u.punchArm=(u.punchArm??0)^1;u.flurryHits++;}
+      }
+      if(u.attackT>0){u.attackT=Math.max(0,u.attackT-dt);const t=1-u.attackT/.25;
+        if(u.weapon==='gun'){l.armR?.rotation.set(-1.5+Math.sin(t*Math.PI)*.25,0,.05);l.armL?.rotation.set(-1.3,0,.45);}
+        else if(u.weapon==='sword')l.armR?.rotation.set(-2.6+t*2.5,0,.1);
+        else (u.punchArm?l.armR:l.armL)?.rotation.set(-1.6*Math.sin(t*Math.PI),0,0);
+      }
+      if(u.spinT>0){u.spinT=Math.max(0,u.spinT-dt);l.armL?.rotation.set(0,0,-1.45);l.armR?.rotation.set(u.weapon==='sword'?-1.4:0,0,1.45);m.rotation.y=u.facing+(2.2-u.spinT)*22;}
+      u.actionLift=0;
+      if(u.actionT>0){u.actionT=Math.max(0,u.actionT-dt);
+        if(u.actionPose==='dash'){l.armL?.rotation.set(1.2,0,-.3);l.armR?.rotation.set(u.weapon==='sword'?-1.3:1.2,0,.3);}
+        else if(u.actionPose==='slam'){const t=.8-u.actionT,up=t<.42?-2.9*Math.min(1,t/.21):-.9*(1-Math.min(1,(t-.42)/.38));l.armL?.rotation.set(up,0,-.2);l.armR?.rotation.set(up,0,.2);
+          if(t<.42)u.actionLift=Math.sin(t/.42*Math.PI*.85)*2.6;
+        }
+        else if(u.actionPose==='hover'){l.armL?.rotation.set(-1.6,0,-.5);l.armR?.rotation.set(-1.6,0,.5);u.actionLift=.14;}
+        else if(u.actionPose==='cast'){l.armL?.rotation.set(-1.2,0,-.45);l.armR?.rotation.set(-1.5,0,.45);}
+      }
+      // The network pose is the ground position; the slam's jump belongs only to the rendered avatar.
+      m.position.y+=(u.actionLift??0);
       // Their pet waits at their own pen while they are in the safe village (pet-pen.ts): it is drawn beside them only away from it.
       const pet=(u.pet===undefined?u.pet=m.getObjectByName('remote-pet')??null:u.pet) as T.Object3D|null;if(pet)pet.visible=petFollows(remote.pose.planet??this.planet,remote.pose);
     }
   }
   receiveRemoteHit(id:string,amount:number,stun=0){const e=this.enemies.find(e=>e.id===id);if(!e||e.hp<=0||!Number.isFinite(amount)||amount<0)return false;this.damageEnemy(e,amount,stun);return true;}
   addRemotePlayer(id:string,pose:RemotePose){this.remotePlayers??=new Map();this.remoteRoot??=new T.Group();if(!this.remoteRoot.parent)this.scene.add(this.remoteRoot);this.removeRemotePlayer(id);const avatar=this.avatar(pose.color??'#6bafd0',pose.gear,pose.look);avatar.userData.remoteId=id;avatar.position.set(pose.x,(pose.y??0)-((pose.y??0)>=INDOOR_Y-10?INDOOR_Y:0),pose.z);avatar.rotation.y=pose.facing??0;this.remoteRoot.add(avatar);this.remotePlayers.set(id,{mesh:avatar,pose:{...pose}});this.updateRemotePlayer(id,pose);}
-  updateRemotePlayer(id:string,pose:RemotePose){if(!Number.isFinite(pose.x)||!Number.isFinite(pose.z))return;const remote=this.remotePlayers?.get(id);if(!remote){this.addRemotePlayer(id,pose);return;}const previous=remote.pose;if(JSON.stringify(pose.gear??previous.gear)!==JSON.stringify(previous.gear)||pose.color&&pose.color!==previous.color||(pose.look??previous.look)!==previous.look){const avatar=this.avatar(pose.color??previous.color??'#6bafd0',pose.gear??previous.gear,pose.look??previous.look);avatar.position.copy(remote.mesh.position);avatar.rotation.copy(remote.mesh.rotation);this.remoteRoot.remove(remote.mesh);this.disposeTree(remote.mesh);remote.mesh=avatar;avatar.userData.remoteId=id;this.remoteRoot.add(avatar);}remote.pose={...previous,...pose};const current=remote.pose,indoor=(current.y??0)>=INDOOR_Y-10,wasIndoor=(previous.y??0)>=INDOOR_Y-10;if(previous.planet!==current.planet||indoor!==wasIndoor||Math.hypot(remote.mesh.position.x-current.x,remote.mesh.position.z-current.z)>6){remote.mesh.position.set(current.x,(current.y??0)-(indoor?INDOOR_Y:0),current.z);remote.mesh.rotation.y=current.facing??0;}this.applyAvatarVisual(remote.mesh,current.visual);remote.mesh.scale.setScalar(HERO_SCALE*Math.max(.2,Math.min(4,current.visual?.size??1)));remote.mesh.visible=(!current.planet||current.planet===this.planet)&&indoor===!!this.interior;}
-  playRemoteAction(id:string,action:'basic'|'skill',index?:number){const remote=this.remotePlayers.get(id);if(!remote)return;if(action==='basic')remote.mesh.userData.attackT=.28;else if(index===0)remote.mesh.userData.spinT=2.2;else remote.mesh.userData.attackT=.28;}
+  updateRemotePlayer(id:string,pose:RemotePose){if(!Number.isFinite(pose.x)||!Number.isFinite(pose.z))return;const remote=this.remotePlayers?.get(id);if(!remote){this.addRemotePlayer(id,pose);return;}const previous=remote.pose;if(JSON.stringify(pose.gear??previous.gear)!==JSON.stringify(previous.gear)||pose.color&&pose.color!==previous.color||(pose.look??previous.look)!==previous.look){const avatar=this.avatar(pose.color??previous.color??'#6bafd0',pose.gear??previous.gear,pose.look??previous.look);avatar.position.copy(remote.mesh.position);avatar.rotation.copy(remote.mesh.rotation);for(const key of ['poseFrom','poseAge','facing','attackT','spinT','weapon','punchArm','actionT','actionPose','actionLift','flurryHits','flurryElapsed'])avatar.userData[key]=remote.mesh.userData[key];this.remoteRoot.remove(remote.mesh);this.disposeTree(remote.mesh);remote.mesh=avatar;avatar.userData.remoteId=id;this.remoteRoot.add(avatar);}remote.pose={...previous,...pose};const current=remote.pose,indoor=(current.y??0)>=INDOOR_Y-10,wasIndoor=(previous.y??0)>=INDOOR_Y-10;const u=remote.mesh.userData,ty=(current.y??0)-(indoor?INDOOR_Y:0),renderBaseY=remote.mesh.position.y-(u.actionLift??0);
+    if(previous.planet!==current.planet||previous.space!==current.space||indoor!==wasIndoor||Math.hypot(remote.mesh.position.x-current.x,remote.mesh.position.z-current.z)>6||Math.abs(renderBaseY-ty)>5){
+      remote.mesh.position.set(current.x,ty,current.z);remote.mesh.rotation.y=u.facing=current.facing??0;delete u.poseFrom;u.poseAge=0;u.lastPos=remote.mesh.position.clone();u.speed=0;u.gait=newGait();u.attackT=u.spinT=u.actionT=u.actionLift=u.flurryHits=0;
+    }else if(previous.x!==current.x||previous.z!==current.z||previous.y!==current.y||previous.facing!==current.facing){
+      u.poseFrom={x:remote.mesh.position.x,y:renderBaseY,z:remote.mesh.position.z,facing:u.facing??remote.mesh.rotation.y};u.poseAge=0;
+    }this.applyAvatarVisual(remote.mesh,current.visual);remote.mesh.scale.setScalar(HERO_SCALE*Math.max(.2,Math.min(4,current.visual?.size??1)));remote.mesh.visible=(!current.planet||current.planet===this.planet)&&indoor===!!this.interior;}
+  playRemoteAction(id:string,action:'basic'|'skill',index?:number,details?:{weapon?:string;facing?:number;pose?:string;special?:string}){
+    const remote=this.remotePlayers.get(id);if(!remote)return;const u=remote.mesh.userData;
+    if(Number.isFinite(details?.facing))this.updateRemotePlayer(id,{...remote.pose,facing:details!.facing});
+    u.weapon=details?.weapon??M.ITEMS[remote.pose.gear?.weapon??'']?.weapon?.kind??'fist';
+    if(action==='basic'){u.attackT=.25;u.punchArm=(u.punchArm??0)^1;}
+    else if(details?.special?.startsWith('dz_')){u.actionPose=this.disguiseActionMotion(details.special,index??0);u.actionT=u.actionPose==='slam'?.8:u.actionPose==='dash'?.35:.6;u.actionLift=0;if(u.actionPose==='strike'){u.attackT=.25;u.punchArm=(u.punchArm??0)^1;}}
+    else if(index===0)u.spinT=2.2;
+    else if(details?.pose==='dash'||details?.pose==='slam'){u.actionPose=details.pose;u.actionT=details.pose==='dash'?.24:.8;u.actionLift=0;}
+    else if(index===3&&details?.special==='fist'){u.flurryElapsed=0;u.flurryHits=1;u.attackT=.25;u.punchArm=(u.punchArm??0)^1;}
+    else u.attackT=.25;
+  }
+  disguiseActionMotion(id:string,index:number):'cast'|'dash'|'slam'|'strike'|'hover'{
+    const motions:Record<string,('cast'|'dash'|'slam'|'strike'|'hover')[]>={
+      dz_superhero:['hover','slam','cast','cast'],dz_mage:['cast','dash','cast','cast'],
+      dz_knight:['cast','dash','cast','cast'],dz_mecha:['cast','cast','cast','cast'],
+      dz_ninja:['cast','cast','dash','cast'],dz_dino:['strike','strike','cast','hover'],
+      dz_pirate:['cast','cast','cast','cast'],dz_vampire:['cast','hover','cast','cast'],
+      dz_snowman:['cast','cast','cast','cast'],dz_fairy:['cast','hover','cast','cast']};
+    return motions[id]?.[index]??'cast';
+  }
+  playDisguiseAction(id:string,index:number){this.disguiseMotion=this.disguiseActionMotion(id,index);this.disguiseT=this.disguiseMotion==='slam'?.8:.6;if(this.disguiseMotion==='strike'){this.punchT=.25;this.punchArm^=1;}}
+  startPunchFlurry(){this.flurryT=.84;this.flurryHits=1;this.punchT=.25;this.punchArm^=1;}
   visualSnapshot():AvatarVisual{return {size:this.playerSizeScale>1?this.playerSizeScale:M.activeStats(this.state).sizeScale,stealth:this.playerStealth,shield:this.playerShield,flight:this.playerFlying?1.7:0,bat:this.playerBat};}
   private applyAvatarVisual(mesh:T.Group,visual?:Partial<AvatarVisual>){
     const opacity=visual?.stealth?.25:1;
@@ -1695,6 +1744,10 @@ export class World {
    */
   private animatePlayer(dt:number){
     for(const key of ['punchT','swingT','aimT','hurtT','spinT','landT','castT'] as const)this[key]=Math.max(0,(this[key]||0)-dt);
+    this.disguiseT=Math.max(0,this.disguiseT-dt);
+    if(this.flurryHits>0&&this.flurryHits<6){this.flurryT=Math.max(0,this.flurryT-dt);
+      while(this.flurryHits<6&&.84-this.flurryT>=this.flurryHits*.14){this.punchT=.25;this.punchArm^=1;this.flurryHits++;}
+    }
     this.walkClock=(this.walkClock||0)+dt*(this.moving?11:3);
     const o=this.walkClock,c=Math.sin(o),p=this.player;
     const armL=part(p,'arm-left'),armR=part(p,'arm-right'),legL=part(p,'leg-left'),legR=part(p,'leg-right'),head=part(p,'head');
@@ -1723,6 +1776,13 @@ export class World {
     else if(pose?.kind==='slam'){
       if(pose.t<.42){const e=pose.t/.42;lean=-e*.4;const up=-2.9*Math.min(1,e*2);armL?.rotation.set(up,0,-.2);armR?.rotation.set(up,0,.2);legL?.rotation.set(-.5,0,0);legR?.rotation.set(-.5,0,0);}
       else{const e=Math.min(1,(pose.t-.42)/.38);sx=sz=1+.25*(1-e);sy=1-.3*(1-e);armL?.rotation.set(-.9*(1-e),0,-.3);armR?.rotation.set(-.9*(1-e),0,.3);lean=.5*(1-e);}
+    }
+    else if(this.disguiseT>0){
+      const motion=this.disguiseMotion;
+      if(motion==='dash'){lean=.5;armL?.rotation.set(1,0,-.3);armR?.rotation.set(1,0,.3);}
+      else if(motion==='slam'){armL?.rotation.set(-2.5,0,-.25);armR?.rotation.set(-2.5,0,.25);lean=-.2;}
+      else if(motion==='hover'){armL?.rotation.set(-1.6,0,-.5);armR?.rotation.set(-1.6,0,.5);lift+=.14;}
+      else if(motion==='cast'){armL?.rotation.set(-1.2,0,-.45);armR?.rotation.set(-1.5,0,.45);lean=-.1;}
     }
     // Laser gaze (skill-fx.ts): the head turns with the sweep, so the beams leave the eyes along the line they hit.
     const gaze=this.gazeAngle;if(head&&gaze!=null){const turn=Math.atan2(Math.sin(gaze-this.facing),Math.cos(gaze-this.facing));head.rotation.set(-.06,Math.max(-1.2,Math.min(1.2,turn)),0);}

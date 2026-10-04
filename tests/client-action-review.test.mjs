@@ -13,6 +13,18 @@ const actionSwitch=click.expression.arguments[1].body.statements.find(ts.isSwitc
 const cases=actionSwitch.caseBlock.clauses.filter(node=>['plant','fertilize','fertilize-manure','feed-all'].includes(node.expression?.text)).map(node=>node.getText(ast));
 const compiled=ts.transpileModule(`${functions.join('\n')}\nasync function act(action,id){switch(action){${cases.join('\n')}}}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('the R punch flurry starts the local animation while the ground slam keeps its own pose',()=>{
+  const skillSource=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='skill').getText(ast);
+  const code=ts.transpileModule(skillSource,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const state=M.newGame(),world={spinT:0,startPunchFlurry(){this.starts=(this.starts??0)+1;},position:{x:0,z:0}},ctx=vm.createContext({
+    M,state,world,started:true,visiting:null,cooldowns:[0,0,0,0],skillDurations:[0,0,0,0],
+    uiBlocked:()=>false,prepareCombatWeapon(){},combat:{skill:()=>true},skillList:()=>Array.from({length:4},()=>({cd:6})),
+    actionHandler:()=>{},tone(){},skillSound:()=>'',emitAction(){},
+  });
+  vm.runInContext(code,ctx);ctx.skill(3);assert.equal(world.starts,1);
+  ctx.skill(2);assert.equal(world.starts,1,'E should use the slam pose instead of punch flurry');
+});
 function fixture(){
   const state=M.newGame(),calls=[],animations=[],panels=[],notices=[];let resolveAction;
   const flash={classList:{add(){},remove(){}}},ctx=vm.createContext({

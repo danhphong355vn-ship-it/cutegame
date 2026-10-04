@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { sendSocket } from './socket-send.mjs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +13,7 @@ import { createAccountStore } from './account-store.mjs';
 import { createActionService } from './action-service.mjs';
 import { createCombatAuthority } from './combat-authority.mjs';
 import { EFFECT_LOOKS } from '../src/combat.ts';
+import { INDOOR_Y } from '../src/house.ts';
 import { rememberAccount } from './account-cache.mjs';
 
 const derive = promisify(scrypt);
@@ -34,12 +36,7 @@ const publicHome = account => {
     // The cottage's trophy shelf and paintings, for visitors (cooldown stamps stay private).
     bosses: Array.isArray(source.bosses) ? source.bosses : [], house: { paintings: Number.isSafeInteger(source.house?.paintings) ? source.house.paintings : 0 } };
 };
-const send = (socket, payload) => {
-  if (socket.readyState !== WebSocket.OPEN) return;
-  // If the network is lagging, drop heavy sync frames so essential health/combat packets get through.
-  if (socket.bufferedAmount > 65536 && payload.type === 'enemies') return;
-  socket.send(JSON.stringify(payload));
-};
+const send = sendSocket;
 const failure = (status, message) => Object.assign(new Error(message), { status });
 export async function createGameServer(options = {}) {
   const host = options.host || process.env.HOST || '127.0.0.1';
@@ -116,7 +113,20 @@ export async function createGameServer(options = {}) {
     return friendList(account);
   }
   function tellFriends(account) { const peer = peers.get(account.id); if (peer) send(peer.socket, { type: 'friends', ...friendList(account) }); }
-  function broadcast(room, payload, except) { for (const id of room.members) { if (id !== except) { const peer = peers.get(id); if (peer) send(peer.socket, payload); } } }
+  function playerSpace(peer) {
+    return peer.visit ? `home:${peer.visit}` : peer.planet === 'home' && Math.hypot(peer.pose.x, peer.pose.z) < 18 ? `home:${peer.account.id}` : 'wild';
+  }
+  function broadcast(room, payload, except) {
+    // Both server combat effects and legacy client effects use this same boundary.
+    const scoped=payload.type==='effect'||payload.type==='playerAction',source=scoped?peers.get(payload.by):null;
+    if(scoped&&(!source||source.room!==room.id))return;
+    if(source)payload={...payload,space:playerSpace(source),planet:source.planet,indoor:(source.pose.y??0)>=INDOOR_Y-10};
+    for(const id of room.members){
+      const peer=peers.get(id);if(id===except||!peer)continue;
+      if(source&&(peer.planet!==payload.planet||playerSpace(peer)!==payload.space||((peer.pose.y??0)>=INDOOR_Y-10)!==payload.indoor))continue;
+      send(peer.socket,payload);
+    }
+  }
   function visibleDrop(peer,drop){const space=drop.space||(drop.planet==='home'&&Math.hypot(drop.x,drop.z)<18?`home:${drop.ownerId}`:'wild');return !peer.visit&&drop.room===peer.room&&drop.planet===peer.planet&&(space==='wild'||space===`home:${peer.account.id}`);}
   function respawn(peer){if(peer.visit)endVisit(peer);join(peer,'home',peer.party);peer.pose={...peer.pose,x:0,z:-4.8};}
   const combatAuthority=createCombatAuthority({store,peers,rooms,remember,send,broadcast,onDeath:respawn});
@@ -143,7 +153,7 @@ export async function createGameServer(options = {}) {
     const room = rooms.get(peer.room); if (room) broadcast(room, { type: 'pose', player: presence(peer) }, peer.account.id);
   }
   function presence(peer) {
-    return { ...publicAccount(peer.account), ...peer.pose, difficulty: Game.difficultyOf(peer.account.profile), id: peer.account.id, planet: peer.planet, space: peer.visit ? `home:${peer.visit}` : peer.planet === 'home' && Math.hypot(peer.pose.x, peer.pose.z) < 18 ? `home:${peer.account.id}` : 'wild', active: peer.active };
+    return { ...publicAccount(peer.account), ...peer.pose, difficulty: Game.difficultyOf(peer.account.profile), id: peer.account.id, planet: peer.planet, space: playerSpace(peer), active: peer.active };
   }
   function roster(room) { return [...room.members].map(id => peers.get(id)).filter(Boolean).map(presence); }
   function elect(room) {
@@ -220,6 +230,72 @@ export async function createGameServer(options = {}) {
       const friends = account ? await refreshFriends(account) : {};
       return respond(response, 200, account && validSession(request)?.id === account.id ? { account: publicAccount(account), profile: account.profile, revision:account.profileRevision||0, authorityVersion:1, ...friends } : { account: null });
     }
+
+    if (route.startsWith('admin/')) {
+      if (!account || !account.isAdmin) throw failure(403, 'Admin access required.');
+      if (route === 'admin/users' && method === 'GET') {
+        const users = await store.list();
+        return respond(response, 200, { users: users.map(u => ({ id: u.id, username: u.username, isAdmin: u.isAdmin, profile: u.profile })) });
+      }
+      if (route === 'admin/catalog' && method === 'GET') {
+        const { VI_CATALOG } = await import('../src/locales/vi-catalog.ts');
+        const catalog = Object.keys(Game.ITEMS).map(id => {
+          const item = Game.ITEMS[id];
+          const folder = Game.CROPS[id] ? 'crops' : Game.FISH[id] ? 'fish' : 'items';
+          const icon = item.type === 'decor' ? null : `/assets/icons/${folder}/${id}.webp`;
+          const engName = item.name || id;
+          const viName = VI_CATALOG[engName] || engName;
+          
+          let category = 'Khác';
+          if (item.type === 'disguise') category = 'Cải trang';
+          else if (item.type === 'weapon' || item.type === 'tool' || id.startsWith('rod') || id.startsWith('harpoon')) category = 'Vũ khí & Dụng cụ';
+          else if (item.type === 'hat' || item.type === 'armor') category = 'Trang phục';
+          else if (Game.CROPS[id] || item.type === 'seed' || Game.FISH[id] || item.type === 'food' || item.type === 'fish') category = 'Thực phẩm & Nông sản';
+          else if (item.type === 'material') category = 'Vật liệu';
+          
+          return { id, type: item.type, icon, name: viName, category };
+        });
+        return respond(response, 200, { catalog });
+      }
+      if (route === 'admin/broadcast' && method === 'POST') {
+        const data = await body(request);
+        if (data.message) {
+          for (const peer of peers.values()) {
+            send(peer.socket, { type: 'chat', id: 'admin', name: 'HỆ THỐNG', message: data.message, at: Date.now() });
+          }
+        }
+        return respond(response, 200, { ok: true });
+      }
+      if (route === 'admin/give' && method === 'POST') {
+        const data = await body(request);
+        const target = await store.get(data.targetId);
+        if (!target) throw failure(404, 'User not found');
+        
+        await store.command({
+          actorId: target.id,
+          requestId: 'admin-give-' + Date.now(),
+          hash: '0000000000000000000000000000000000000000000000000000000000000000',
+          expectedRevision: target.profileRevision || 0,
+          run: async (records) => {
+            const t = records.get(target.id);
+            if (data.type === 'energy') {
+              t.profile.energy = (t.profile.energy || 0) + data.amount;
+            } else if (data.type === 'item') {
+              t.profile.bag = t.profile.bag || {};
+              t.profile.bag[data.itemId] = (t.profile.bag[data.itemId] || 0) + data.amount;
+            }
+            return { ok: true };
+          }
+        });
+        
+        const updated = await store.get(target.id);
+        const peer = peers.get(target.id);
+        if (peer) send(peer.socket, { type: 'profile', profile: updated.profile, revision: updated.profileRevision, authorityVersion: 1 });
+        
+        return respond(response, 200, { ok: true });
+      }
+    }
+
     if (!account) throw failure(401, 'Sign in to play online.');
     const authorizedSession=validSession(request);
     const checkAccess=()=>{if(!authorizedSession||validSession(request)!==authorizedSession)throw failure(401,'Sign in to play online.');};
@@ -264,6 +340,11 @@ export async function createGameServer(options = {}) {
     try {
       const url = new URL(request.url || '/', 'http://localhost');
       if (url.pathname.startsWith('/api/')) return await api(request, response, url);
+      if (url.pathname === '/admin' || url.pathname === '/admin/') {
+        const data = await readFile(path.resolve(root, 'admin', 'index.html'));
+        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+        return response.end(request.method === 'HEAD' ? undefined : data);
+      }
       if (!['GET', 'HEAD'].includes(request.method)) throw failure(405, 'This action is not supported.');
       const dist = path.resolve(root, 'dist'), relative = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
       const target = path.resolve(dist, relative);
@@ -351,7 +432,10 @@ export async function createGameServer(options = {}) {
         } else if (message.type === 'enemies' && room?.host === account.id && Array.isArray(message.enemies)) {
           if (Date.now() - room.lastSnapshot < 100) return; room.lastSnapshot = Date.now();
           combatAuthority.acceptSnapshots(room,message.enemies);
-          broadcast(room,{type:'enemies',enemies:combatAuthority.activeSnapshots(room)});
+          // Share the delta cursor with the combat tick: forward navigation
+          // promptly without broadcasting the same unchanged creatures twice.
+          const changed=combatAuthority.activeSnapshots(room);
+          if(changed.length)broadcast(room,{type:'enemies',enemies:changed});
         } else if(message.type==='basic'&&room&&!peer.visit){
           rate('basic:'+account.id,12,1000);combatAuthority.basic(peer,text(message.targetId,100));
         } else if(message.type==='skill'&&room&&!peer.visit){
@@ -366,7 +450,7 @@ export async function createGameServer(options = {}) {
           const target=peers.get(message.id);if(target)combatAuthority.damage(target,text(message.enemyId,100),message.source==='shot'?'shot':'melee');
         } else if (message.type === 'effect' && room) {
           const visual=message.visual,cleanVisual=visual&&['arc','ring','impact','trail','beam','cast','toss'].includes(visual.kind)?{kind:visual.kind,x:number(visual.x),z:number(visual.z),radius:number(visual.radius,1,0,40),facing:number(visual.facing,0,-100,100),duration:number(visual.duration,.4,0,5),...(Number.isFinite(visual.arc)?{arc:number(visual.arc,2.2,0,6.3)}:{}),...(Number.isFinite(visual.width)?{width:number(visual.width,.65,.05,4)}:{}),...(EFFECT_LOOKS.includes(visual.look)?{look:visual.look}:{}),color:/^#[a-f0-9]{6}$/i.test(visual.color)?visual.color:'#fff2a0'}:null;
-          broadcast(room, { type: 'effect', visual:cleanVisual, by: account.id, action:message.action==='basic'||message.action==='skill'?message.action:null,index:Number.isInteger(message.index)&&message.index>=0&&message.index<=3?message.index:null,effect: text(message.effect, 30), x: number(message.x), z: number(message.z), color: /^#[a-f0-9]{6}$/i.test(message.color) ? message.color : '#fff2a0' }, account.id);
+          broadcast(room, { type: 'effect', visual:cleanVisual, by: account.id, effect: text(message.effect, 30), x: number(message.x), z: number(message.z), color: /^#[a-f0-9]{6}$/i.test(message.color) ? message.color : '#fff2a0' }, account.id);
         }
       } catch (error) { send(socket, { type: 'error', ...(requestId ? { requestId } : {}), message: error.status ? error.message : 'That action could not be completed.' }); }
     });
@@ -422,5 +506,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     process.exitCode = 1;
   }
 }
-
 

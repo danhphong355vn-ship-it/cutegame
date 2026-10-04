@@ -1965,3 +1965,6 @@ h1 > span {
 .restock-stock { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .restock-stock span { padding: 3px 8px; border-radius: 999px; background: #fff; font-weight: 700; font-size: var(--t-sm, 13px); }
 .restock-stock small { opacity: .6; margin-left: 2px; }
+
+.float.chat-bubble { background: rgba(255,255,255,0.9); color: #333; font-size: 14px; font-weight: bold; padding: 6px 12px; border-radius: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 2px solid #ccc; max-width: 250px; text-wrap: wrap; text-align: center; line-height: 1.4; transform: translate(-50%, -100%); transition: opacity 0.5s; -webkit-text-stroke-width: 0px; }
+
