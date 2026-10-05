@@ -53,7 +53,12 @@ test('every group header has Vietnamese',()=>{
 test('main.ts panels group with the right order: shop and workshop gear-first; bag, chest and market gather-first',async()=>{
   const {readFile}=await import('node:fs/promises');const src=await readFile(new URL('../src/main.ts',import.meta.url),'utf8');
   const fnBody=name=>{const at=src.indexOf(`function ${name}(`);return src.slice(at,src.indexOf('\nfunction ',at+10));};
-  for(const [fn,panel,order] of [['shop','shop','GEAR_ORDER'],['crafting','craft','GEAR_ORDER'],['inventory','bag','BAG_ORDER'],['market','sell','BAG_ORDER'],['storage','chest','BAG_ORDER']]){
+  for(const [fn,panel,order] of [['shop','shop','GEAR_ORDER'],['crafting','craft','GEAR_ORDER'],['market','sell','BAG_ORDER'],['storage','chest','BAG_ORDER']]){
     const body=fnBody(fn);assert.ok(body.includes(`IG.${order}`),`${fn} uses ${order}`);assert.ok(body.includes(`IG.groupedHtml(`)&&body.includes(`'${panel}'`),`${fn} renders groups`);assert.ok(!body.includes('sortByPower'),fn);
   }
+  const invBody=fnBody('inventory');
+  assert.ok(invBody.includes('IG.BAG_ORDER'),'inventory uses BAG_ORDER');
+  assert.ok(invBody.includes('dark-bag-theme')&&invBody.includes('dark-inv-grid'),'inventory protects Dark Bag layout');
+  assert.ok(!invBody.includes('IG.groupedHtml('),'inventory does not use groupedHtml');
+  assert.ok(!invBody.includes('sortByPower'),'inventory');
 });
