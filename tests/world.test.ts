@@ -335,7 +335,7 @@ test('a host message for another planet cannot leave undefeatable creatures on t
   assert.deepEqual(peer.enemies.map(e=>e.id),['candy:enemy:0'],'no home creatures are spawned into the candy world');
   // The candy host's own reports still apply: a defeat hides the creature and its marker.
   peer.applyEnemySnapshots([{...peer.enemySnapshots()[0],hp:0,respawn:20}]);
-  assert.equal(own.hp,0);assert.equal(own.mesh.visible,false);
+  assert.equal(own.hp,0);assert.equal(own.dying,.3,'the defeated model briefly dissolves before hiding');
   assert.equal(peer.enemies.filter(e=>e.hp>0).length,0,'nothing alive is left for the minimap to draw');
 });
 
@@ -455,13 +455,33 @@ test('sustained flight keeps a flying stance instead of the walking cycle locall
  const local=world();local.build('home');local.refreshPlayer();local.playerFlying=true;local.moving=true;local.disguiseT=local.punchT=local.spinT=0;
  (local as unknown as {animatePlayer(dt:number):void}).animatePlayer(.12);
  assert.ok(local.player.getObjectByName('arm-left')!.rotation.x<-1);
+ assert.ok(Math.abs(local.player.rotation.x-Math.PI/6)<1e-8);
  assert.ok(Math.abs(local.player.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
  const remote=world();remote.addRemotePlayer('friend',{x:0,z:0,y:1.7,moving:true,visual:{flight:1.7}});
  const model=remote.remotePlayers.get('friend')!.mesh;
  (remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.12);
  assert.ok(model.getObjectByName('arm-left')!.rotation.x<-1);
+ assert.ok(Math.abs(model.rotation.x-Math.PI/6)<1e-8);
  assert.ok(Math.abs(model.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
  assert.ok(model.position.y>1.6&&model.position.y<1.8,'flight height is not added twice');
+});
+
+test('hovering in place keeps both avatars upright with relaxed arms',()=>{
+ const local=world();local.build('home');local.refreshPlayer();local.playerFlying=true;local.moving=false;local.disguiseT=local.punchT=local.spinT=0;
+ (local as unknown as {animatePlayer(dt:number):void}).animatePlayer(.12);
+ assert.equal(local.player.rotation.x,0);assert.ok(local.player.getObjectByName('arm-left')!.rotation.x>-.5);
+ const remote=world();remote.addRemotePlayer('friend',{x:0,z:0,y:1.7,moving:false,visual:{flight:1.7}});
+ const model=remote.remotePlayers.get('friend')!.mesh;
+ (remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.12);
+ assert.equal(model.rotation.x,0);assert.ok(model.getObjectByName('arm-left')!.rotation.x>-.5);
+});
+
+test('a dead enemy snapshot shows the death burst once even before the health packet',()=>{
+ const w=world();w.build('home');const e=w.enemies.find(enemy=>enemy.hp>0)!;let bursts=0;
+ w.defeatFeedback=()=>{bursts++;};
+ const snapshot={id:e.id,x:e.x,z:e.z,hp:0,maxHp:e.maxHp,respawn:25};
+ w.applyEnemySnapshots([snapshot]);assert.equal(bursts,1);assert.ok(e.mesh.visible);
+ w.applyAuthoritativeEnemyHealth(snapshot);w.applyEnemySnapshots([snapshot]);assert.equal(bursts,1);
 });
 
 test('punch flurry animates six alternating strikes locally and on a remote avatar',()=>{
@@ -473,4 +493,33 @@ test('punch flurry animates six alternating strikes locally and on a remote avat
  const model=remote.remotePlayers.get('friend')!.mesh,animate=(dt:number)=>(remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(dt);
  const remoteSides=[model.userData.punchArm];for(let i=1;i<6;i++){animate(.14);remoteSides.push(model.userData.punchArm);}
  assert.equal(model.userData.flurryHits,6);for(let i=1;i<remoteSides.length;i++)assert.notEqual(remoteSides[i],remoteSides[i-1]);
+});
+
+test('monsters do not target or damage players while dueling', () => {
+  const w = world();
+  w.build('home');
+  w.position.set(30, 0, 30);
+  w.addRemotePlayer('friend', { x: 32, z: 32, hp: 100 });
+  const enemy = w.enemies[0];
+  enemy.x = 29; enemy.z = 29;
+
+  // Normal: targets local player (closer than friend)
+  const targetNormal = (w as any).enemyTarget(enemy);
+  assert.ok(targetNormal);
+
+  // Local player is dueling: monster targets remote friend instead
+  w.arenaActive = true;
+  const targetWhileLocalDueling = (w as any).enemyTarget(enemy);
+  assert.equal(targetWhileLocalDueling?.id, 'friend');
+
+  // Both players are dueling: monster ignores both
+  w.isPlayerDueled = id => id === 'friend';
+  const targetWhileBothDueling = (w as any).enemyTarget(enemy);
+  assert.equal(targetWhileBothDueling, undefined);
+
+  // Duel ends: monsters resume targeting normally
+  w.arenaActive = false;
+  w.isPlayerDueled = () => false;
+  const targetAfterDuel = (w as any).enemyTarget(enemy);
+  assert.ok(targetAfterDuel);
 });

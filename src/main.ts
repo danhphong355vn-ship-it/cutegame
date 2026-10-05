@@ -48,6 +48,7 @@ import { skillSound } from './skill-sounds.ts';
 import { initUpgradeBench as mountUpgradeBench } from './upgrade-bench.ts';
 import { CombatView } from './combat-view.ts';
 import { SkillFx } from './skill-fx.ts';
+import { CostumeFx } from './costume-fx.ts';
 import { terrainHeight } from './environments.ts';
 import { FishingSimulation, selectCatch, planCast, catchWeight, resolveMysteryCatch } from './fishing.ts';
 import { GroundGestures } from './gestures.ts';
@@ -238,9 +239,11 @@ const joystick=mountJoystick($('#hud'),()=>started&&!uiBlocked()&&!placement&&!f
 const combatView=new CombatView(world.scene);
 // Laser gaze beams, electric bolts and bursts, scorch marks and the ⚡ mark (skill-fx.ts), for the explorer and remote players alike.
 const skillFx=new SkillFx(world.scene,world.fx??null,{
-  explorerAt:(x,z)=>Math.hypot(world.position.x-x,world.position.z-z)<1.5?world.player:[...world.remotePlayers.values()].find(r=>r.mesh.visible&&Math.hypot(r.pose.x-x,r.pose.z-z)<1.5)?.mesh??null,
+  explorerAt:(x,z)=>effectExplorerAt(x,z,1.5),
   ground:(x,z)=>world.interior?0:Math.max(0,terrainHeight(world.environment.layout,{x,z})),targets:()=>world.enemies,sound:kind=>tone(kind)});
 combatView.electric=(x,y,z,dx,dz)=>skillFx.crackle(x,y,z,dx,dz);
+function effectExplorerAt(x:number,z:number,range=4){let model=world.player,distance=Math.hypot(model.position.x-x,model.position.z-z);for(const remote of world.remotePlayers.values()){const d=Math.hypot(remote.mesh.position.x-x,remote.mesh.position.z-z);if(remote.mesh.visible&&d<distance){model=remote.mesh;distance=d;}}return distance<range?model:null;}
+const costumeFx=new CostumeFx(world.scene,effectExplorerAt,(x,z)=>world.interior?0:Math.max(0,terrainHeight(world.environment.layout,{x,z})),()=>world.player);
 world.onElectricShot=(x,y,z,dx,dz)=>skillFx.crackle(x,y,z,dx,dz);world.onElectricPop=(x,z)=>skillFx.shock({x,z,kind:'impact',radius:.7,color:'#8fdcff',look:'shock'},false,false);
 const combat=new CombatSimulation({
   position:()=>world.position,facing:()=>world.facing,face:angle=>world.facing=angle,
@@ -254,7 +257,7 @@ const combat=new CombatSimulation({
   hit:(target,impact)=>hit(target as Enemy,impact.amount,impact.stun,impact),
   clearShot:(from,to)=>clearSegment(from,to,world.obstacles,{bounds:WORLD_BOUNDS,clearance:.05}),
   effect:effect=>{showEffect(effect);emitAction({kind:'effect',effect});},
-  heal:fraction=>{if(!actionHandler)state.hp=Math.min(M.maxHp(state),state.hp+M.maxHp(state)*fraction);},
+  heal:fraction=>{if(!actionHandler){const before=state.hp;state.hp=Math.min(M.maxHp(state),state.hp+M.maxHp(state)*fraction);showFairyHealing(before,state.hp);}},
   execute:(target,fraction)=>executeEnemy(target as Enemy,fraction),
   status:(target,kind,duration)=>{if(actionHandler)return;if(!network.status?.(target.id,kind,duration))world.statusEnemy(target as Enemy,kind,duration);},
   moveTarget:(target,x,z)=>{if(actionHandler)return;if(!network.moveTarget?.(target.id,x,z))moveEnemy(target as Enemy,x,z);},
@@ -262,7 +265,9 @@ const combat=new CombatSimulation({
 combatHud.isMarked=id=>combat.marked.has(id);
 const gestures=new GroundGestures({tap:(x,y)=>{if(placement)placeAt(x,y);else world.pointer(x,y);},walk:(x,y)=>{if(!placement)world.steer(x,y);},zoom:ratio=>{world.zoom=clampZoom(world.zoom*ratio,'pinch');world.resize();},stop:()=>{world.destination=null;world.route=[];world.selected=null;}});
 // Swings become additive slash trails and area skills become expanding rings with sparks.
+function showFairyHealing(before:number,after:number){const amount=Math.round(after-before);if(amount>0&&state.gear.disguise==='dz_fairy')world.fx?.text(world.position,`+${amount} HP`,'heal');}
 function showEffect(effect:CombatEffect){
+  if(costumeFx.effect(effect,world.fx))return;
   const fx=world.fx,at={x:effect.x,z:effect.z};
   if(effect.kind==='toss'){world.guardDogs?.toss(effect);return;}
   if(effect.look==='eyes'&&effect.kind==='beam'){skillFx.gaze(effect);return;}
@@ -1355,7 +1360,7 @@ world.onDamage=(amount,source='melee',enemyId)=>{
 };
 world.onHazardEnemy=(enemy,damage)=>hit(enemy,damage,0,undefined,true,true);
 world.onEnvironmentEvent=event=>{if(event.message)toast(event.message,'🌍');save();updateHud();};
-function resetCombat(){combat.reset();combatTimers.reset();combatView.clear();skillFx.clear();world.flurryT=world.flurryHits=0;world.movementLocked=false;world.playerFlying=false;world.playerStealth=false;}
+function resetCombat(){combat.reset();combatTimers.reset();combatView.clear();costumeFx.clear();skillFx.clear();world.flurryT=world.flurryHits=0;world.movementLocked=false;world.playerFlying=false;world.playerStealth=false;}
 
 function rebuildHomePresentation(planet:M.PlanetId){
   const shared=network.role&&world.planet===planet, enemies=shared?world.enemySnapshots():null,environment=shared?world.environmentSnapshot():null;
@@ -1366,7 +1371,8 @@ export const gameBridge:GameBridge={
   getState:()=>state,getWorld:()=>world,
   getPresence:()=>({y:house.poseY(world.position.y),x:world.position.x,z:world.position.z,facing:world.facing,planet:world.planet,name:state.name,color:state.color,level:state.level,hp:state.hp,maxHp:M.maxHp(state),gear:state.gear,moving:world.moving,visible:!document.hidden,visual:world.visualSnapshot(),dog:(()=>{const dog=world.ownDog?.();return dog!==null&&dog!==undefined&&dogFollows(world.planet,world.position,!!world.interior)?dog:null;})()}),
   getOfflineState:()=>{try{return M.parseSave(localStorage.getItem(M.SAVE_KEY));}catch{return null;}},
-  applyState(next){fishingEpoch++;fishingView.resetMysteryAvailability();if(flight)exitSpace();shipSequence?.reset();arriving=false;autopilotTarget=null;homeQueued=false;state=next;applyMovePad();const nameInput=document.querySelector<HTMLInputElement>('#name-input');if(nameInput)nameInput.value=state.name;visiting=null;visitHome=null;world.state=state;resetCombat();world.build(state.planet);world.refreshPlayer();if(modal==='bag')inventory();else if(modal==='quests')quests();else if(modal)closeDialog();updateHud();updateLabels();},
+  updateHud(){updateHud();},
+  applyState(next){fishingEpoch++;fishingView.resetMysteryAvailability();if(flight)exitSpace();shipSequence?.reset();arriving=false;autopilotTarget=null;homeQueued=false;showFairyHealing(state.hp,next.hp);state=next;applyMovePad();const nameInput=document.querySelector<HTMLInputElement>('#name-input');if(nameInput)nameInput.value=state.name;visiting=null;visitHome=null;world.state=state;resetCombat();world.build(state.planet);world.refreshPlayer();if(modal==='bag')inventory();else if(modal==='quests')quests();else if(modal)closeDialog();updateHud();updateLabels();},
   setPersistence(handler){persistence=handler;},
   setActionHandler(handler){actionHandler=handler;world.authoritativeAction=handler?intent=>handler(intent).then(reply=>reply.result):undefined;},
   applyAuthoritativeState(next){
@@ -1701,7 +1707,7 @@ function frame(now:number){frameTime=frameTime*.9+(now-previous)*.1;const realDt
   autoAttack(weaponKind);
   updateHunting(dt);updateGuardian(dt);
   fishingView.update(dt,world.time,fishGame||fishingView.active?tipPosition():rodTip,world.interior?FAR_AWAY:world.position,fishGame?.simulation??null);
-  skillFx.update(dt);world.gazeAngle=skillFx.gazeAngle(world.player);
+  costumeFx.update(dt,world.fx,[...(world.playerFlying?[{model:world.player,fairy:state.gear.disguise==='dz_fairy',moving:world.moving}]:[]),...[...world.remotePlayers.values()].filter(r=>r.mesh.visible&&(r.pose.visual?.flight??0)>0).map(r=>({model:r.mesh,fairy:r.pose.gear?.disguise==='dz_fairy',moving:!!r.pose.moving}))]);skillFx.update(dt);world.gazeAngle=skillFx.gazeAngle(world.player);
   if(!fishGame&&!$('#reel-button').hidden&&!$('#reel-button').classList.contains('hunt')&&(performance.now()>recastUntil||world.moving))showReel(false);
   // Resizing the WebGL canvas clears its drawing buffer. Apply automatic quality changes
   // before drawing, so the browser never presents an empty frame during a quality transition.

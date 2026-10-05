@@ -19,6 +19,7 @@ export interface NetworkDrop {id:string;ownerId:string;item:string;count:number;
 export interface GameBridge {
   spawnNetworkDrop(drop:NetworkDrop,actor:string):void;removeNetworkDrop(id:string):void;releaseNetworkDrop(id:string):void;clearNetworkDrops():void;
   applyAuthorityHealth(delta:number,died:boolean):void;
+  updateHud?():void;
   getState():SaveState;applyState(next:SaveState):void;getWorld():World;getPresence():GamePresence;
   getOfflineState():SaveState|null;setPersistence(handler:((state:SaveState)=>void)|null):void;
   setActionHandler(handler:((intent:GameIntent)=>Promise<ActionReply>)|null):void;
@@ -27,7 +28,7 @@ export interface GameBridge {
   applyRemoteHit(enemyId:string,damage:number,stun?:number,impact?:CombatHit):void;
   applyRemoteStatus(enemyId:string,kind:EnemyStatus,duration:number):void;
   applyRemoteMove(enemyId:string,x:number,z:number):void;
-  applySharedKill(enemyId:string,xp:number,boss:boolean,type?:string):void;
+  applySharedKill(enemyId:string,xp:number,boss:boolean,type?:string,eventId?:string,x?:number,z?:number):void;
   applyRemoteDamage(amount:number,source?:string):void;
   applyRemoteEffect(effect:CombatEffect):void;
   setVisiting(owner:string|null,homeState?:Partial<SaveState>):void;
@@ -36,4 +37,3 @@ export interface GameBridge {
   onFrame(listener:(dt:number)=>void):()=>void;
   onAction(listener:(action:GameAction)=>void):()=>void;
 }
-

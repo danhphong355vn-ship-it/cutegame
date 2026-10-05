@@ -206,3 +206,71 @@ test('1v1 Wager Duel: running into house results in immediate forfeit', async t 
   assert.equal(bLoss.won, false);
   assert.equal(bLoss.reason, 'house');
 });
+
+test('1v1 Wager Duel: running into safe zone results in immediate forfeit', async t => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'zoo-garden-duel-safezone-'));
+  const store = await createAccountStore({ dataDir, databaseUrl: '' });
+  const game = await createGameServer({ port: 0, dataDir, accountStore: store, databaseUrl: '', databaseRequired: false });
+  const clients = [];
+  t.after(async () => {
+    for (const c of clients) c.socket.terminate();
+    await game.close();
+  });
+
+  async function registerExplorer(username, initialEnergy = 1000) {
+    const res = await fetch(game.url + '/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: 'password-123', name: username.toUpperCase() })
+    });
+    assert.equal(res.status, 200);
+    const session = await res.json();
+    const cookie = res.headers.get('set-cookie').split(';')[0];
+    await store.command({
+      actorId: session.account.id,
+      requestId: randomUUID(),
+      hash: 'a'.repeat(64),
+      expectedRevision: session.revision,
+      actionType: 'testFixture',
+      run: records => {
+        const profile = records.get(session.account.id).profile;
+        profile.energy = initialEnergy;
+        return true;
+      }
+    });
+    const client = await connect(game.url, cookie);
+    clients.push(client);
+    await client.next(m => m.type === 'joined');
+    return Object.assign(client, { id: session.account.id });
+  }
+
+  const host = await registerExplorer('player_safe_a', 1000);
+  const peer = await registerExplorer('player_safe_b', 1000);
+
+  // Both players move out of the safe village into the wilderness (x: 25, z: 25)
+  // Distance from 0 to 25 is within safe range with a small delay
+  await new Promise(r => setTimeout(r, 400));
+  host.send({ type: 'pose', x: 25, z: 25 });
+  peer.send({ type: 'pose', x: 25, z: 25 });
+  await host.next(m => m.type === 'pose' && m.player.id === peer.id);
+
+  host.send({ type: 'duelChallenge', targetId: peer.id, bet: 100 });
+  await peer.next(m => m.type === 'duelInvite');
+  peer.send({ type: 'duelAccept', fromId: host.id });
+  await host.next(m => m.type === 'arenaJoined');
+  await peer.next(m => m.type === 'arenaJoined');
+
+  // Wait > 65ms for pose throttling
+  await new Promise(r => setTimeout(r, 100));
+  // Player B runs back into the safe village zone (x: 0, z: 0 where hypot < 18)
+  peer.send({ type: 'pose', x: 0, z: 0 });
+
+  // Player A should win by forfeit ('safe_zone'), Player B should lose by forfeit ('safe_zone')
+  const aWin = await host.next(m => m.type === 'arenaResult' && m.won && m.forfeit);
+  const bLoss = await peer.next(m => m.type === 'arenaResult' && !m.won && m.forfeit);
+
+  assert.equal(aWin.won, true);
+  assert.equal(aWin.reason, 'safe_zone');
+  assert.equal(bLoss.won, false);
+  assert.equal(bLoss.reason, 'safe_zone');
+});

@@ -11,6 +11,13 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
     if(planet==='home'&&Math.hypot(pose.x-0,(pose.z??0)-(-8))<2.8)return true;
     return false;
   };
+  const inSafeZone=(planet,pose)=>{
+    if(!pose)return false;
+    if(inHouse(planet,pose))return true;
+    if(planet==='home'&&Math.hypot(pose.x??0,pose.z??0)<18)return true;
+    if(planet!=='arena'&&Math.hypot(pose.x??0,pose.z??0)<11)return true;
+    return false;
+  };
   function publish(room){if(room)broadcast(room,{type:'arena',players:[...members.values()].filter(m=>m.peer.room===room.id).map(m=>({id:m.peer.account.id,name:m.peer.account.profile.name,hp:m.hp,maxHp:m.maxHp,x:m.peer.pose.x,z:m.peer.pose.z,protectedUntil:m.protectedUntil,wins:m.peer.account.arenaStats?.wins||0,losses:m.peer.account.arenaStats?.losses||0,isDuel:activeDuels.has(m.peer.account.id)}))});}
   let enabled = true, goldenHour = false;
   function leave(peer,reason='forfeit'){
@@ -68,8 +75,10 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
     if(!enabled)throw Object.assign(new Error('Đấu trường PvP hiện đang tạm đóng cửa.'),{status:400});
     const maxHpA=Game.maxHp(peerA.account.profile);
     const maxHpB=Game.maxHp(peerB.account.profile);
-    members.set(peerA.account.id,{peer:peerA,hp:maxHpA,maxHp:maxHpA,protectedUntil:now()+3500,stunUntil:0,pending:false,isDuel:true});
-    members.set(peerB.account.id,{peer:peerB,hp:maxHpB,maxHp:maxHpB,protectedUntil:now()+3500,stunUntil:0,pending:false,isDuel:true});
+    const startedInSafeA=inSafeZone(peerA.planet,peerA.pose);
+    const startedInSafeB=inSafeZone(peerB.planet,peerB.pose);
+    members.set(peerA.account.id,{peer:peerA,hp:maxHpA,maxHp:maxHpA,protectedUntil:now()+3500,stunUntil:0,pending:false,isDuel:true,startedInSafe:startedInSafeA});
+    members.set(peerB.account.id,{peer:peerB,hp:maxHpB,maxHp:maxHpB,protectedUntil:now()+3500,stunUntil:0,pending:false,isDuel:true,startedInSafe:startedInSafeB});
     activeDuels.set(peerA.account.id,{opponentId:peerB.account.id,opponentName:peerB.account.profile.name,bet,pot,planet:peerA.planet,room:peerA.room});
     activeDuels.set(peerB.account.id,{opponentId:peerA.account.id,opponentName:peerA.account.profile.name,bet,pot,planet:peerB.planet,room:peerB.room});
     send(peerA.socket,{type:'arenaJoined',planet:peerA.planet,x:peerA.pose.x,z:peerA.pose.z,spawnX:peerA.pose.x,spawnZ:peerA.pose.z,hp:maxHpA,maxHp:maxHpA,isDuel:true,bet,pot,opponentId:peerB.account.id,opponentName:peerB.account.profile.name});
@@ -155,6 +164,14 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
         }
         if(inHouse(m.peer.planet,m.peer.pose)){
           leave(m.peer,'house');
+          continue;
+        }
+        if(m.startedInSafe){
+          if(!inSafeZone(m.peer.planet,m.peer.pose)){
+            m.startedInSafe=false;
+          }
+        }else if(inSafeZone(m.peer.planet,m.peer.pose)){
+          leave(m.peer,'safe_zone');
           continue;
         }
       }else{

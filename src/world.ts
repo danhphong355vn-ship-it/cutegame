@@ -13,6 +13,7 @@ import { buildGround } from './ground.ts';
 import { buildPond } from './pond-view.ts';
 import { circlesAt, holdsHero, ignoreRetarget, nearRay, pickCircle, pickScale, RAYCAST_ONLY, type PickCircle } from './picking.ts';
 import * as T from 'three';
+import { poseCostume, poseFlight, animateCostume, motionDuration, type CostumeMotion } from './costume-motion.ts';
 import { manageSceneMatrices, updateSceneMatrices } from './scene-matrices.ts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { keepAlive } from './dispose-tree.ts';
@@ -153,6 +154,7 @@ export class World {
   private progressPending=new Set<string>();private titanView?:TitanAttackView;
   environment!:EnvironmentSimulation;environmentView!:EnvironmentView;movementLocked=false;/** In the village or the cottage and hurt: home-care.ts heals 4x, the HUD shows a chip. */ homeRecovering=false;playerFlying=false;playerStealth=false;
   arenaActive=false;arenaStunUntil=0;arenaTargets:{id:string;x:number;z:number;hp:number;maxHp:number;radius:number}[]=[];
+  isPlayerDueled?:(id:string)=>boolean;
   networkRole:'host'|'peer'|null=null;remotePlayers=new Map<string,{mesh:T.Group;pose:RemotePose}>();remoteRoot=new T.Group();
   onRemoteDamage:(id:string,amount:number,source?:'melee'|'shot'|'hazard',enemyId?:string)=>void=()=>{};
   onEnvironmentEvent:(event:EnvironmentEvent)=>void=()=>{};
@@ -181,7 +183,7 @@ export class World {
   /** The creature last hit and when: it stays marked for TARGET_HOLD seconds. */
   lastHit?: {e:Enemy;t:number}|null;
   // Player animation timers set by combat and fishing.
-  punchT=0; punchArm=0; flurryT=0; flurryHits=0; swingT=0; aimT=0; hurtT=0; spinT=0; landT=0; castT=0; disguiseT=0; disguiseMotion:'cast'|'dash'|'slam'|'strike'|'hover'|'gaze'|'throw'|'bless'|'dive'='cast'; /** The last tap on a pond's water, for the cast point. */ pondTap:{id:string;x:number;z:number}|null=null; fishing:'idle'|'cast'|'wait'|'fight'='idle';
+  punchT=0; punchArm=0; flurryT=0; flurryHits=0; swingT=0; aimT=0; hurtT=0; spinT=0; landT=0; castT=0; disguiseT=0; disguiseMotion:CostumeMotion='cast'; /** The last tap on a pond's water, for the cast point. */ pondTap:{id:string;x:number;z:number}|null=null; fishing:'idle'|'cast'|'wait'|'fight'='idle';
   walkClock=0; weaponKind:'fist'|'sword'|'gun'|'rod'='fist'; pose:{kind:'dash'|'slam';t:number}|null=null; fishTension=0; invulnerable=false;
   private shakeOffset=new T.Vector3();/** Ground distance the view reaches from the camera target (resize). */ viewReach?:number; private playerMaterials:LitMaterial[]=[];private hemi?:T.HemisphereLight;
   canvas: HTMLCanvasElement; state: SaveState;
@@ -1006,11 +1008,14 @@ export class World {
         else if(u.actionPose==='gaze'){l.armL?.rotation.set(-.9,0,-.2);l.armR?.rotation.set(-.9,0,.2);}
         else if(u.actionPose==='throw'){const raised=u.actionT>.4;l.armL?.rotation.set(raised?-2.4:-.5,0,-.25);l.armR?.rotation.set(raised?-2.4:-1.3,0,.25);}
         else if(u.actionPose==='bless'){l.armL?.rotation.set(-1.5,0,-.8);l.armR?.rotation.set(-1.5,0,.8);}
+        if(['dive','throw','bless','gaze','charm','roots'].includes(u.actionPose)){const action=poseCostume({...l,head:part(m,'head')},u.actionPose,u.actionT);u.actionLift=action.lift;u.costumeLean=action.lean;}else u.costumeLean=0;
       }
       // The transmitted pose.y includes flight height; only add a small visual hover.
       if(flying){l.legL?.rotation.set(moving?.18:.12,0,-.12);l.legR?.rotation.set(moving?-.12:.12,0,.12);u.actionLift+=Math.sin(this.time*4)*.07;
         if((u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0){l.armL?.rotation.set(moving?-1.35:-.25,0,-.28);l.armR?.rotation.set(moving?-1.35:-.25,0,.28);}}
-      m.rotation.x=flying&&moving?Math.PI/6:0;
+      if(flying&&(u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0){const flight=poseFlight(l,remote.pose.gear?.disguise==='dz_fairy',moving,this.time);u.costumeLean=flight.lean;}
+      m.rotation.x=flying&&moving?(remote.pose.gear?.disguise==='dz_fairy'?.14:Math.PI/6):(u.actionT>0?u.costumeLean??0:0);
+      animateCostume(m,remote.pose.gear?.disguise,flying,moving,this.time);
       m.position.y+=(u.actionLift??0);
       // Their pet waits at their own pen while they are in the safe village (pet-pen.ts): it is drawn beside them only away from it.
       const pet=(u.pet===undefined?u.pet=m.getObjectByName('remote-pet')??null:u.pet) as T.Object3D|null;if(pet)pet.visible=petFollows(remote.pose.planet??this.planet,remote.pose);
@@ -1035,16 +1040,16 @@ export class World {
     else if(index===3&&details?.special==='fist'){u.flurryElapsed=0;u.flurryHits=1;u.attackT=.25;u.punchArm=(u.punchArm??0)^1;}
     else u.attackT=.25;
   }
-  disguiseActionMotion(id:string,index:number):'cast'|'dash'|'slam'|'strike'|'hover'|'gaze'|'throw'|'bless'|'dive'{
-    const motions:Record<string,('cast'|'dash'|'slam'|'strike'|'hover'|'gaze'|'throw'|'bless'|'dive')[]>={
+  disguiseActionMotion(id:string,index:number):CostumeMotion{
+    const motions:Record<string,CostumeMotion[]>={
       dz_superhero:['hover','dive','gaze','throw'],dz_mage:['cast','dash','cast','cast'],
       dz_knight:['cast','dash','cast','cast'],dz_mecha:['cast','cast','cast','cast'],
       dz_ninja:['cast','cast','dash','cast'],dz_dino:['strike','strike','cast','hover'],
       dz_pirate:['cast','cast','cast','cast'],dz_vampire:['cast','hover','cast','cast'],
-      dz_snowman:['cast','cast','cast','cast'],dz_fairy:['bless','hover','bless','cast']};
+      dz_snowman:['cast','cast','cast','cast'],dz_fairy:['bless','hover','charm','roots']};
     return motions[id]?.[index]??'cast';
   }
-  playDisguiseAction(id:string,index:number){this.disguiseMotion=this.disguiseActionMotion(id,index);this.disguiseT=this.disguiseMotion==='gaze'?1.2:this.disguiseMotion==='throw'?1:this.disguiseMotion==='dive'?.42:this.disguiseMotion==='slam'?.8:.7;if(this.disguiseMotion==='strike'){this.punchT=.25;this.punchArm^=1;}}
+  playDisguiseAction(id:string,index:number){this.disguiseMotion=this.disguiseActionMotion(id,index);this.disguiseT=motionDuration(this.disguiseMotion);if(this.disguiseMotion==='strike'){this.punchT=.25;this.punchArm^=1;}}
   startPunchFlurry(){this.flurryT=.84;this.flurryHits=1;this.punchT=.25;this.punchArm^=1;}
   visualSnapshot():AvatarVisual{return {size:this.playerSizeScale>1?this.playerSizeScale:M.activeStats(this.state).sizeScale,stealth:this.playerStealth,shield:this.playerShield,flight:this.playerFlying?1.7:0,bat:this.playerBat};}
   private applyAvatarVisual(mesh:T.Group,visual?:Partial<AvatarVisual>){
@@ -1340,12 +1345,16 @@ export class World {
   private enemyTarget(e:Enemy){
     const candidates:Array<Point&{id?:string;enemy?:Enemy}>=[];
     const safe=this.planet==='home'?18:11;
-    if(!this.playerStealth&&Math.hypot(this.position.x,this.position.z)>=safe)candidates.push({x:this.position.x,z:this.position.z});
-    for(const [id,remote] of this.remotePlayers??[])if(remote.mesh.visible&&!remote.pose.visual?.stealth&&(remote.pose.hp??1)>0&&Math.hypot(remote.pose.x,remote.pose.z)>=safe)candidates.push({x:remote.pose.x,z:remote.pose.z,id});
+    if(!this.arenaActive&&!this.playerStealth&&Math.hypot(this.position.x,this.position.z)>=safe)candidates.push({x:this.position.x,z:this.position.z});
+    for(const [id,remote] of this.remotePlayers??[])if(remote.mesh.visible&&!this.isPlayerDueled?.(id)&&!remote.pose.visual?.stealth&&(remote.pose.hp??1)>0&&Math.hypot(remote.pose.x,remote.pose.z)>=safe)candidates.push({x:remote.pose.x,z:remote.pose.z,id});
     if((e.statuses?.charm??0)>0)return this.enemies.filter(other=>other!==e&&other.hp>0).map(enemy=>({x:enemy.x,z:enemy.z,enemy})).sort((a,b)=>Math.hypot(a.x-e.x,a.z-e.z)-Math.hypot(b.x-e.x,b.z-e.z))[0];
     return candidates.sort((a,b)=>Math.hypot(a.x-e.x,a.z-e.z)-Math.hypot(b.x-e.x,b.z-e.z))[0];
   }
-  private hitEnemyTarget(target:Point&{id?:string;enemy?:Enemy},amount:number,source:'melee'|'shot'|'hazard'='melee',enemyId?:string){if(target.enemy)(this.onHazardEnemy??((e,d)=>this.damageEnemy(e,d)))(target.enemy,amount);else if(target.id)this.onRemoteDamage?.(target.id,amount,source,enemyId);else if(!this.playerFlying||source!=='melee')this.onDamage(amount,source,enemyId);}
+  private hitEnemyTarget(target:Point&{id?:string;enemy?:Enemy},amount:number,source:'melee'|'shot'|'hazard'='melee',enemyId?:string){
+    if(target.enemy)(this.onHazardEnemy??((e,d)=>this.damageEnemy(e,d)))(target.enemy,amount);
+    else if(target.id){if(!this.isPlayerDueled?.(target.id))this.onRemoteDamage?.(target.id,amount,source,enemyId);}
+    else if(!this.arenaActive&&(!this.playerFlying||source!=='melee'))this.onDamage(amount,source,enemyId);
+  }
   private shootEnemy(e:Enemy,target:Point&{id?:string;enemy?:Enemy}){
     const electric=e.type==='robot',distance=Math.max(.01,Math.hypot(target.x-e.x,target.z-e.z)),shot=ball(electric?'#e8fbff':e.definition?.accent??'#f5b576',.17,e.x,1.0,e.z,0);this.scene.add(shot);
     this.enemyShots.push({id:e.id+':shot:'+Math.random().toString(36).slice(2,10),ownerId:e.id,mesh:shot,vx:(target.x-e.x)/distance*13,vz:(target.z-e.z)/distance*13,life:1.4,damage:e.damage,...(electric?{electric}:{}),targetId:target.id,targetEnemyId:target.enemy?.id});
@@ -1353,23 +1362,23 @@ export class World {
   private areaDamage(e:Enemy,x:number,z:number,radius:number,multiplier:number,inner=0){
     const hit=(p:Point)=>{const d=Math.hypot(p.x-x,p.z-z);return d<radius&&d>=inner;};
     if((e.statuses?.charm??0)>0){for(const target of this.enemies)if(target!==e&&target.hp>0&&hit(target))(this.onHazardEnemy??((v,d)=>this.damageEnemy(v,d)))(target,e.damage*multiplier);return;}
-    const environmentAtStart=this.environment,source=e.skill==='rain'||e.skill==='eclipse'?'shot':'melee';if(hit(this.position))this.hitEnemyTarget(this.position,e.damage*multiplier,source,e.id);
+    const environmentAtStart=this.environment,source=e.skill==='rain'||e.skill==='eclipse'?'shot':'melee';if(!this.arenaActive&&hit(this.position))this.hitEnemyTarget(this.position,e.damage*multiplier,source,e.id);
     if(this.environment!==environmentAtStart)return;
-    for(const [id,remote] of this.remotePlayers??[])if(remote.mesh.visible&&(remote.pose.hp??1)>0&&hit(remote.pose))this.onRemoteDamage?.(id,e.damage*multiplier,source,e.id);
+    for(const [id,remote] of this.remotePlayers??[])if(remote.mesh.visible&&!this.isPlayerDueled?.(id)&&(remote.pose.hp??1)>0&&hit(remote.pose))this.onRemoteDamage?.(id,e.damage*multiplier,source,e.id);
   }
   localPlayerId='local';
   /** The laser gaze's world angle while it sweeps (main.ts from skill-fx.ts), else null. */
   gazeAngle:number|null=null;
   private titanTargets():TitanTarget[]{
     const safe=this.planet==='home'?18:11,targets:TitanTarget[]=[];
-    if(this.state.hp>0&&Math.hypot(this.position.x,this.position.z)>=safe)targets.push({id:this.localPlayerId??'local',x:this.position.x,z:this.position.z,airborne:this.playerFlying||this.environment.airborne});
-    for(const[id,r]of this.remotePlayers??[])if(r.mesh.visible&&(r.pose.hp??1)>0&&Math.hypot(r.pose.x,r.pose.z)>=safe)targets.push({id,x:r.pose.x,z:r.pose.z,airborne:!!r.pose.visual?.flight});return targets;
+    if(!this.arenaActive&&this.state.hp>0&&Math.hypot(this.position.x,this.position.z)>=safe)targets.push({id:this.localPlayerId??'local',x:this.position.x,z:this.position.z,airborne:this.playerFlying||this.environment.airborne});
+    for(const[id,r]of this.remotePlayers??[])if(r.mesh.visible&&!this.isPlayerDueled?.(id)&&(r.pose.hp??1)>0&&Math.hypot(r.pose.x,r.pose.z)>=safe)targets.push({id,x:r.pose.x,z:r.pose.z,airborne:!!r.pose.visual?.flight});return targets;
   }
   private updateTitanAttacks(e:Enemy,dt:number,authoritative=true){
     if(!e.titanAttacks?.length)return;if(e.hp<=0){e.titanAttacks=[];e.titanLift=0;return;}
     const environment=this.environment;
     for(const a of e.titanAttacks){const result=stepTitanAttack(a,dt,e,this.titanTargets());
-      if(authoritative)for(const hit of result.hits){if(hit.id===(this.localPlayerId??'local'))this.onDamage(e.damage*hit.multiplier,hit.source,e.id);else this.onRemoteDamage?.(hit.id,e.damage*hit.multiplier,hit.source,e.id);if(this.environment!==environment)return;}
+      if(authoritative)for(const hit of result.hits){if(hit.id===(this.localPlayerId??'local')){if(!this.arenaActive)this.onDamage(e.damage*hit.multiplier,hit.source,e.id);}else{if(!this.isPlayerDueled?.(hit.id))this.onRemoteDamage?.(hit.id,e.damage*hit.multiplier,hit.source,e.id);}if(this.environment!==environment)return;}
       // Each client applies its own pull from shared state; damage still belongs to the host.
       for(const p of result.pulls)if(p.id===(this.localPlayerId??'local'))this.move(p.x,p.z,true);
       if(result.move){e.x=result.move.x;e.z=result.move.z;e.titanLift=result.move.y;if(result.done){e.titanLift=0;e.phase='recover';e.phaseTime=.5;}}
@@ -1389,9 +1398,9 @@ export class World {
     if(!e.skill){e.telegraphs=[];return false;}
     e.skillCount=(e.skillCount??0)+1;e.phaseTime=BOSS_WINDUPS[e.skill]*(e.hp<e.maxHp*.3?.8:1);
     const phase=e.hp<e.maxHp*.5?Math.max(2,e.bossStage??1):e.bossStage??1;e.telegraphs=bossTelegraphs(e.skill,e,target,phase,e.attackCount);
-    if(e.skill==='rain'&&!(e.statuses?.charm)){const additional=[this.position,...[...this.remotePlayers?.values()??[]].filter(r=>r.mesh.visible&&(r.pose.hp??1)>0).map(r=>r.pose)].filter(p=>Math.hypot(p.x-e.x,p.z-e.z)<=22&&Math.hypot(p.x-target.x,p.z-target.z)>.05);for(const p of additional)e.telegraphs.push(...bossTelegraphs(e.skill,e,p,phase,e.attackCount+e.telegraphs.length));}
+    if(e.skill==='rain'&&!(e.statuses?.charm)){const additional=[...(!this.arenaActive?[this.position]:[]),...[...this.remotePlayers?.entries()??[]].filter(([id,r])=>r.mesh.visible&&!this.isPlayerDueled?.(id)&&(r.pose.hp??1)>0).map(([,r])=>r.pose)].filter(p=>Math.hypot(p.x-e.x,p.z-e.z)<=22&&Math.hypot(p.x-target.x,p.z-target.z)>.05);for(const p of additional)e.telegraphs.push(...bossTelegraphs(e.skill,e,p,phase,e.attackCount+e.telegraphs.length));}
     if(!this.authoritativeAction&&e.type==='dragon'&&(e.bossStage??1)>=2&&(e.skill==='slam'||e.skill==='rain')){
-      const random=seeded(e.attackCount*9127),targets=[this.position,...[...this.remotePlayers?.values()??[]].filter(r=>r.mesh.visible&&(r.pose.hp??1)>0).map(r=>r.pose)].filter(p=>Math.hypot(p.x-e.x,p.z-e.z)<=25);
+      const random=seeded(e.attackCount*9127),targets=[...(!this.arenaActive?[this.position]:[]),...[...this.remotePlayers?.entries()??[]].filter(([id,r])=>r.mesh.visible&&!this.isPlayerDueled?.(id)&&(r.pose.hp??1)>0).map(([,r])=>r.pose)].filter(p=>Math.hypot(p.x-e.x,p.z-e.z)<=25);
       targets.forEach((p,index)=>{for(let i=0;i<((e.bossStage??1)>=3?5:3);i++){const angle=random()*Math.PI*2,r=random()*4;this.environment.addFireRain({x:p.x+Math.cos(angle)*r,z:p.z+Math.sin(angle)*r},`dragon:${e.attackCount}:${index}:${i}`);}});
     }
     if(isTitanSkill(e.skill))e.telegraphs=titanTelegraphs(e.skill,{x:e.x,z:e.z,radius:e.radius,facing:e.mesh.rotation.y},target,this.titanTargets(),seeded(e.attackCount*91571));
@@ -1696,8 +1705,8 @@ export class World {
       if(!clearSegment(from,shot.mesh.position,this.obstacles,{bounds:WORLD_BOUNDS,clearance:.1}))shot.life=0;
       if(shot.targetEnemyId){const enemy=this.enemies.find(e=>e.id===shot.targetEnemyId);if(enemy&&enemy.hp>0&&shot.life>0&&Math.hypot(shot.mesh.position.x-enemy.x,shot.mesh.position.z-enemy.z)<enemy.radius+.2){(this.onHazardEnemy??((e,d)=>this.damageEnemy(e,d)))(enemy,shot.damage);shot.life=0;}}
       else{
-        if(shot.life>0&&Math.hypot(shot.mesh.position.x-this.position.x,shot.mesh.position.z-this.position.z)<.65){this.onDamage(shot.damage,'shot',shot.ownerId);shot.life=0;}
-        for(const [id,remote] of this.remotePlayers??[])if(shot.life>0&&remote.mesh.visible&&Math.hypot(shot.mesh.position.x-remote.pose.x,shot.mesh.position.z-remote.pose.z)<.65){this.onRemoteDamage?.(id,shot.damage,'shot',shot.ownerId);shot.life=0;}
+        if(!this.arenaActive&&shot.life>0&&Math.hypot(shot.mesh.position.x-this.position.x,shot.mesh.position.z-this.position.z)<.65){this.onDamage(shot.damage,'shot',shot.ownerId);shot.life=0;}
+        for(const [id,remote] of this.remotePlayers??[])if(shot.life>0&&remote.mesh.visible&&!this.isPlayerDueled?.(id)&&Math.hypot(shot.mesh.position.x-remote.pose.x,shot.mesh.position.z-remote.pose.z)<.65){this.onRemoteDamage?.(id,shot.damage,'shot',shot.ownerId);shot.life=0;}
       }
       }
       if(shot.electric){const p=shot.mesh.position;if(shot.life>0)this.onElectricShot?.(p.x,p.y,p.z,shot.vx/13,shot.vz/13);else this.onElectricPop?.(p.x,p.z);}
@@ -1812,10 +1821,13 @@ export class World {
       else if(motion==='gaze'){armL?.rotation.set(-.9,0,-.2);armR?.rotation.set(-.9,0,.2);lean=-.12;if(head)head.rotation.x=-.12;}
       else if(motion==='throw'){const raised=this.disguiseT>.4;armL?.rotation.set(raised?-2.4:-.5,0,-.25);armR?.rotation.set(raised?-2.4:-1.3,0,.25);lean=raised?-.2:.25;}
       else if(motion==='bless'){armL?.rotation.set(-1.5,0,-.8);armR?.rotation.set(-1.5,0,.8);lift+=.08;}
+      if(['dive','throw','bless','gaze','charm','roots'].includes(motion)){const action=poseCostume({armL,armR,legL,legR,head},motion,this.disguiseT);lean=action.lean;lift+=action.lift;}
     }
     if(this.playerFlying){legL?.rotation.set(this.moving?.18:.12,0,-.12);legR?.rotation.set(this.moving?-.12:.12,0,.12);lift+=Math.sin(this.time*4)*.07;
       if(this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose){armL?.rotation.set(this.moving?-1.35:-.25,0,-.28);armR?.rotation.set(this.moving?-1.35:-.25,0,.28);lean=this.moving?Math.PI/6:0;}}
     // Laser gaze (skill-fx.ts): the head turns with the sweep, so the beams leave the eyes along the line they hit.
+    if(this.playerFlying&&this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose){const flight=poseFlight({armL,armR,legL,legR,head},this.state.gear.disguise==='dz_fairy',this.moving,this.time);lean=flight.lean;}
+    animateCostume(p,this.state.gear.disguise,this.playerFlying,this.moving,this.time);
     const gaze=this.gazeAngle;if(head&&gaze!=null){const turn=Math.atan2(Math.sin(gaze-this.facing),Math.cos(gaze-this.facing));head.rotation.set(-.06,Math.max(-1.2,Math.min(1.2,turn)),0);}
     // Fishing: the cast swings the rod overhead and forward; reeling leans back against the line.
     if(this.fishing&&this.fishing!=='idle'&&armR){

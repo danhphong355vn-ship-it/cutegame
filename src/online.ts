@@ -479,6 +479,7 @@ export function initOnline(game:GameBridge) {
     if(world().arenaActive||isDuelActive)return;
     openPlayer(id);
   };
+  world().isPlayerDueled=(id)=>(isDuelActive&&(id===activeDuelOpponent?.id||id===account?.id))||arenaPlayers.some(p=>p.id===id&&p.isDuel);
   document.addEventListener('keydown',event=>{
     if(gameplayKey(event)!=='Enter'||event.repeat||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]'))return;
     if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();captureChatDraft();tab='world';render();if(!dialog.open)dialog.showModal();content.querySelector<HTMLInputElement>('.social-chat-input')?.focus();
@@ -594,12 +595,14 @@ export function initOnline(game:GameBridge) {
       const restored = result.restoredHp ?? Math.min(heroMaxHp, (result.winnerRemainingHp ?? curState.hp) + Math.round(heroMaxHp * 0.3));
       curState.energy = (curState.energy || 0) + (result.pot || 0);
       curState.hp = restored;
-      game.applyState(curState);
+      game.updateHud?.();
 
       let winReason = `Bạn đã hạ gục anh hùng ${oppName}!`;
       if (result.forfeit) {
         if (result.reason === 'house') {
           winReason = `${oppName} đã bỏ chạy vào nhà và bị xử thua cuộc!`;
+        } else if (result.reason === 'safe_zone') {
+          winReason = `${oppName} đã bỏ chạy về nơi an toàn và bị xử thua cuộc!`;
         } else {
           winReason = `${oppName} đã bỏ cuộc giữa trận!`;
         }
@@ -617,12 +620,14 @@ export function initOnline(game:GameBridge) {
       const heroMaxHp = maxHp(curState);
       const restored = result.restoredHp ?? Math.round(heroMaxHp * 0.3);
       curState.hp = restored;
-      game.applyState(curState);
+      game.updateHud?.();
 
       let loseReason = `Bạn đã bị ${oppName} đánh bại trong trận quyết đấu.`;
       if (result.forfeit) {
         if (result.reason === 'house') {
           loseReason = `Bạn đã bỏ chạy vào nhà nên bị xử thua cuộc!`;
+        } else if (result.reason === 'safe_zone') {
+          loseReason = `Bạn đã bỏ chạy về nơi an toàn nên bị xử thua cuộc!`;
         } else {
           loseReason = `Bạn đã rời khỏi trận đấu nên bị xử thua!`;
         }
@@ -768,7 +773,7 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='arenaHit'){
         duelSelfHp=message.hp;duelSelfMaxHp=message.maxHp;
         updateDuelTopBarUi();
-        const s=game.getState();s.hp=message.hp;game.applyState(s);
+        const s=game.getState();s.hp=message.hp;game.updateHud?.();
         world().hurtFeedback(message.damage);
       }
       else if(message.type==='arenaHitDealt'){
