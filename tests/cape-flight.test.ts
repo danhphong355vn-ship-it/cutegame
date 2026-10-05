@@ -30,7 +30,7 @@ test('both red cape surfaces share motion and cannot enter the ink hull',()=>{
 test('flight transitions remain bounded, recover upright and match frame rates',()=>{
   function run(step:number){const model=new T.Group(),l={armL:new T.Group(),armR:new T.Group(),legL:new T.Group(),legR:new T.Group()};let pose={lean:0,lift:0};
     for(let i=0;i<Math.round(1/step);i++)pose=smoothFlight(model,l,false,true,true,i*step,step);
-    assert.ok(Math.abs(pose.lean-Math.PI/10)<.001);
+    assert.ok(Math.abs(pose.lean-50*Math.PI/180)<.001);
     const moving=pose.lean;pose=smoothFlight(model,l,false,true,false,1,step);assert.ok(pose.lean>0&&pose.lean<moving);
     for(let i=0;i<Math.round(1/step);i++)pose=smoothFlight(model,l,false,true,false,1+i*step,step);
     assert.ok(pose.lean<.001);return moving;

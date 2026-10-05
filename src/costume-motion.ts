@@ -39,7 +39,7 @@ export function poseCostume(l:Limbs,motion:CostumeMotion,remaining:number) {
 }
 
 export function poseFlight(l:Limbs,fairy:boolean,moving:boolean,time:number) {
-  const tilt=fairy?.14:Math.PI/10;
+  const tilt=fairy?.14:50*Math.PI/180;
   l.legL?.rotation.set(moving?.18:.12,0,-.1);l.legR?.rotation.set(moving?.22:.12,0,.1);
   l.armL?.rotation.set(moving?(fairy?-.6:-1.65):-.22,0,fairy?-.6:-.26);
   l.armR?.rotation.set(moving?(fairy?-.6:-1.65):-.22,0,fairy?.6:.26);
@@ -67,8 +67,8 @@ export function smoothFlight(model:T.Object3D,l:Limbs,fairy:boolean,flying:boole
   state.move+=(Number(flying&&moving)-state.move)*k;state.air+=(Number(flying)-state.air)*k;
   if(!active)return {lean:0,lift:0,air:state.air,weight:0};
   const target=limbTargets(fairy,state.move);
-  for(const key of ['armL','armR','legL','legR'] as const){const limb=l[key];if(limb){limb.rotation.x+=(target[key][0]-limb.rotation.x)*state.air;limb.rotation.z+=(target[key][1]-limb.rotation.z)*state.air;}}
-  return {lean:state.move*(fairy?.14:Math.PI/10),lift:Math.sin(time*(fairy?3.4:4))*.07*state.air,air:state.air,weight:state.air};
+  for(const key of ['armL','armR','legL','legR'] as const){const limb=l[key];if(limb){const blend=flying?1:state.air;limb.rotation.x+=(target[key][0]-limb.rotation.x)*blend;limb.rotation.z+=(target[key][1]-limb.rotation.z)*blend;}}
+  return {lean:state.move*(fairy?.14:50*Math.PI/180),lift:Math.sin(time*(fairy?3.4:4))*.07*state.air,air:state.air,weight:state.air};
 }
 function limbTargets(fairy:boolean,m:number){return {armL:[-.22+m*((fairy?-.6:-1.65)+.22),fairy?-.6:-.26],armR:[-.22+m*((fairy?-.6:-1.65)+.22),fairy?.6:.26],legL:[.12+m*.06,-.1],legR:[.12+m*.1,.1]};}
 

@@ -455,13 +455,13 @@ test('sustained flight keeps a flying stance instead of the walking cycle locall
  const local=world();local.build('home');local.refreshPlayer();local.playerFlying=true;local.moving=true;local.disguiseT=local.punchT=local.spinT=0;
  for(let i=0;i<20;i++)(local as unknown as {animatePlayer(dt:number):void}).animatePlayer(.12);
  assert.ok(local.player.getObjectByName('arm-left')!.rotation.x<-1);
- assert.ok(Math.abs(local.player.rotation.x-Math.PI/10)<1e-8);
+ assert.ok(Math.abs(local.player.rotation.x-50*Math.PI/180)<1e-8);
  assert.ok(Math.abs(local.player.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
  const remote=world();remote.addRemotePlayer('friend',{x:0,z:0,y:1.7,moving:true,visual:{flight:1.7}});
  const model=remote.remotePlayers.get('friend')!.mesh;
  for(let i=0;i<20;i++)(remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.12);
  assert.ok(model.getObjectByName('arm-left')!.rotation.x<-1);
- assert.ok(Math.abs(model.rotation.x-Math.PI/10)<1e-8);
+ assert.ok(Math.abs(model.rotation.x-50*Math.PI/180)<1e-8);
  assert.ok(Math.abs(model.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
  assert.ok(model.position.y>1.6&&model.position.y<1.8,'flight height is not added twice');
 });
@@ -549,4 +549,24 @@ test('ambient volcano dragon expiry does not dismiss an admin world boss',()=>{
  w.applyEnemySnapshots([{id:boss.id,type:'dragon',x:48,z:-50,hp:boss.hp,maxHp:boss.maxHp,respawn:0,worldBoss:true}]);
  w.environment.time=cycle*360+239.9;w.update(.01,true,false);w.update(.2,true,false);
  assert.ok(boss.hp>0);assert.ok(boss.mesh.visible);
+});
+
+test('superhero takeoff has no walking legs during its hover cast and pitches forward at 50 degrees',()=>{
+ const w=world();w.build('home');w.refreshPlayer();w.state.gear.disguise='dz_superhero';w.playerFlying=true;w.moving=true;w.disguiseMotion='hover';w.disguiseT=.7;w.punchT=w.spinT=0;
+ const animate=(dt:number)=>(w as unknown as {animatePlayer(dt:number):void}).animatePlayer(dt);
+ animate(1/60);const left=w.player.getObjectByName('leg-left')!,right=w.player.getObjectByName('leg-right')!;
+ assert.ok(left.rotation.x>=.12&&right.rotation.x>=.12,'both legs hold a flight pose from the first frame');
+ const peer=world();peer.addRemotePlayer('friend',{x:0,z:0,y:1.7,moving:true,gear:{disguise:'dz_superhero'},visual:{flight:1.7}});
+ peer.playRemoteAction('friend','skill',0,{special:'dz_superhero',weapon:'fist'});
+ (peer as unknown as {animateRemotes(dt:number):void}).animateRemotes(1/60);
+ const remote=peer.remotePlayers.get('friend')!.mesh;
+ assert.ok(remote.getObjectByName('leg-left')!.rotation.x>=.12&&remote.getObjectByName('leg-right')!.rotation.x>=.12,'remote takeoff also has no walking cycle');
+ assert.ok(remote.rotation.x>0,'remote takeoff starts tilting during the hover cast');
+ for(let i=0;i<120;i++)animate(1/60);
+ assert.ok(Math.abs(w.player.rotation.x-50*Math.PI/180)<1e-6);
+ for(const heading of [0,Math.PI/2,Math.PI,-Math.PI/2]){
+   w.facing=heading;animate(1/60);w.player.updateMatrixWorld(true);
+   const up=new T.Vector3(0,1,0).transformDirection(w.player.matrixWorld),forward=new T.Vector3(Math.sin(heading),0,Math.cos(heading));
+   assert.ok(up.dot(forward)>.75,'torso leans toward travel rather than backward');
+ }
 });

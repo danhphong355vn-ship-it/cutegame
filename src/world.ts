@@ -1012,8 +1012,8 @@ export class World {
         if(['dive','throw','bless','gaze','charm','roots'].includes(u.actionPose)){const action=poseCostume({...l,head:part(m,'head')},u.actionPose,u.actionT);u.actionLift=action.lift;u.costumeLean=action.lean;}else u.costumeLean=0;
       }
       // Network position already includes altitude; blend only the stance and visual bob.
-      const flight=smoothFlight(m,l,remote.pose.gear?.disguise==='dz_fairy',flying,moving,this.time,dt,(u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0);
-      m.rotation.x=(u.actionT>0?u.costumeLean??0:flight.lean);
+      const flight=smoothFlight(m,l,remote.pose.gear?.disguise==='dz_fairy',flying,moving,this.time,dt,((u.actionT??0)<=0||u.actionPose==='hover')&&(u.attackT??0)<=0&&(u.spinT??0)<=0);
+      m.rotation.x=(u.actionT>0&&u.actionPose!=='hover'?u.costumeLean??0:flight.lean);
       u.actionLift+=flight.lift;
       animateCostume(m,remote.pose.gear?.disguise,flying,moving,this.time);
       m.position.y+=(u.actionLift??0);
@@ -1485,7 +1485,9 @@ export class World {
     e.cooldown=Math.max(0,e.cooldown-dt);this.updateTitanAttacks(e,dt);if(e.phase==='titan-leap'&&e.titanAttacks?.some(a=>a.skill==='leap'))return;e.stun=Math.max(0,e.stun-dt);e.routeTime=Math.max(0,(e.routeTime??0)-dt);
     for(const key of Object.keys(e.statuses??{}))e.statuses![key]=Math.max(0,e.statuses![key]-dt);
     if(e.hp<=0){e.respawn=Math.max(0,e.respawn-dt);if(this.authoritativeAction)return;if(e.respawn<=0&&Math.hypot(this.position.x-e.homeX,this.position.z-e.homeZ)>22&&![...this.remotePlayers?.values()??[]].some(r=>r.mesh.visible&&Math.hypot(r.pose.x-e.homeX,r.pose.z-e.homeZ)<22)){e.maxHp=e.baseMaxHp??e.maxHp;e.damage=e.baseDamage??e.damage;e.hp=e.maxHp;e.x=e.homeX;e.z=e.homeZ;e.mesh.visible=true;e.dying=0;e.phase='idle';this.fx?.burst({x:e.x,z:e.z},{n:14,color:[e.definition?.color??'#ffffff','#ffffff'],speed:3,up:5});e.route=[];e.stun=0;e.scaled=false;e.enraged=false;e.skill=undefined;e.telegraphs=[];e.skillEffects=[];}return;}
-    const def=e.definition??{speed:2.4,reach:1.8,sight:e.boss?11:6,behavior:'melee',cooldown:1.3,windup:.35,flying:false,titan:false};
+    const def=e.definition??{speed:2.4,reach:1.8,radius:e.radius,sight:e.boss?11:6,behavior:'melee',cooldown:1.3,windup:.35,flying:false,titan:false};
+    // A scaled boss must be able to strike across its larger collision footprint.
+    const attackReach=def.reach+Math.max(0,e.radius-def.radius);
     const target=this.enemyTarget(e),distance=target?Math.hypot(target.x-e.x,target.z-e.z):Infinity;
     if(!this.authoritativeAction&&e.boss&&!e.scaled&&distance<def.sight&&e.hp===e.maxHp){
       const nearby=[...this.remotePlayers?.values()??[]].filter(r=>r.mesh.visible&&(r.pose.hp??1)>0&&Math.hypot(r.pose.x-e.x,r.pose.z-e.z)<32),players=nearby.length+(Math.hypot(this.position.x-e.x,this.position.z-e.z)<32?1:0),level=Math.max(this.state.level,...nearby.map(r=>r.pose.level??1)),difference=Math.max(0,level-(e.level??1));
@@ -1514,7 +1516,7 @@ export class World {
         }
         if(def.behavior==='charger'&&!noAttack){e.phase='charge';e.phaseTime=.75;e.mesh.userData.chargeHit=false;if(target){const dx=target.x-e.x,dz=target.z-e.z,d=Math.hypot(dx,dz)||1;e.targetX=e.x+dx/d*13*.75;e.targetZ=e.z+dz/d*13*.75;}}
         else{
-          if(target&&!noAttack){const reach=e.mesh.userData.slam?5.5:def.reach+(e.boss?BOSS_REACH.strike-.4:0);
+          if(target&&!noAttack){const reach=e.mesh.userData.slam?5.5:attackReach+(e.boss?BOSS_REACH.strike-.4:0);
             if(def.behavior==='shooter')this.shootEnemy(e,target);
             else if(distance<reach+.4&&clearSegment(e,target,this.obstacles,{bounds:WORLD_BOUNDS,clearance:0}))this.hitEnemyTarget(target,e.damage*(e.mesh.userData.slam?1.25:1),'melee',e.id);
           }
@@ -1540,7 +1542,7 @@ export class World {
     if(returning){e.phase='return';if(!this.authoritativeAction)e.hp=Math.min(e.maxHp,e.hp+e.maxHp*.3*dt);if(homeDistance<.8||def.speed===0){if(!this.authoritativeAction)e.hp=e.maxHp;e.phase='idle';returning=false;e.enraged=false;e.scaled=false;}}
     let goal:Point=chasing?target!:returning?{x:e.homeX,z:e.homeZ}:{x:e.homeX+Math.sin(this.time*.25+e.homeZ)*2,z:e.homeZ+Math.cos(this.time*.25+e.homeX)*2};
     if((statuses.fear??0)>0&&target)goal={x:e.x+(e.x-target.x),z:e.z+(e.z-target.z)};
-    const canWindup=!!def.titan&&distance<24||distance<(e.type==='lavaworm'?1.2:def.reach+(e.boss?BOSS_REACH.windup:0))||(e.type==='boar'||['firebat','thunderbird','jellyzap','wisp'].includes(e.type??''))&&distance<8;
+    const canWindup=!!def.titan&&distance<24||distance<(e.type==='lavaworm'?1.2:attackReach+(e.boss?BOSS_REACH.windup:0))||(e.type==='boar'||['firebat','thunderbird','jellyzap','wisp'].includes(e.type??''))&&distance<8;
     if(chasing&&canWindup&&!e.cooldown&&!noAttack){
       e.phase='windup';e.phaseTime=def.windup;e.targetX=target!.x;e.targetZ=target!.z;e.mesh.userData.attackCount=(e.mesh.userData.attackCount??0)+1;e.mesh.userData.slam=e.boss&&!BOSS_SKILLS[e.type??'']&&e.mesh.userData.attackCount%3===0;
       if(e.boss)this.beginBossSkill(e,target!);else e.skill=undefined;
@@ -1552,7 +1554,7 @@ export class World {
       this.moveCreature(e,vx/n*speed*dt,vz/n*speed*dt);e.mesh.rotation.y=Math.atan2(vx,vz);e.phase='chase';return;
     }
     if(def.speed===0)return;
-    if(chasing&&distance<(e.boss?(def.reach+BOSS_REACH.windup)*.85:def.reach*.8)&&!noAttack)return;
+    if(chasing&&distance<(e.boss?(attackReach+BOSS_REACH.windup)*.85:attackReach*.8)&&!noAttack)return;
     const obstacles=this.creatureObstacles(),options=this.navigationOptions(e.radius,true);
     options.walkable=p=>this.creatureWalkable(e,p);
     this.resolveOverlap(e,obstacles,options.clearance!);
@@ -1788,7 +1790,7 @@ export class World {
     const kind=this.weaponKind??'fist',pose=this.pose;
     let twist=0,lean=0,lift=0,sx=1,sy=1,sz=1;
     // Base: walk cycle or idle breathing.
-    if(this.moving){armL?.rotation.set(-c*.8,0,-.3);armR?.rotation.set(c*.8,0,.3);legL?.rotation.set(c*.7,0,0);legR?.rotation.set(-c*.7,0,0);lift=Math.abs(Math.cos(o))*.06;lean=.1;if(head)head.rotation.set(0,0,Math.sin(o)*.05);}
+    if(this.moving&&!this.playerFlying){armL?.rotation.set(-c*.8,0,-.3);armR?.rotation.set(c*.8,0,.3);legL?.rotation.set(c*.7,0,0);legR?.rotation.set(-c*.7,0,0);lift=Math.abs(Math.cos(o))*.06;lean=.1;if(head)head.rotation.set(0,0,Math.sin(o)*.05);}
     else{armL?.rotation.set(0,0,-.3-Math.sin(o)*.05);armR?.rotation.set(0,0,.3+Math.sin(o)*.05);legL?.rotation.set(0,0,0);legR?.rotation.set(0,0,0);sy=1+Math.sin(o*1.2)*.025;if(head)head.rotation.set(0,Math.sin(o*.4)*.15,0);}
     // Weapon stance.
     if(armR){
@@ -1823,7 +1825,7 @@ export class World {
       else if(motion==='bless'){armL?.rotation.set(-1.5,0,-.8);armR?.rotation.set(-1.5,0,.8);lift+=.08;}
       if(['dive','throw','bless','gaze','charm','roots'].includes(motion)){const action=poseCostume({armL,armR,legL,legR,head},motion,this.disguiseT);lean=action.lean;lift+=action.lift;}
     }
-    const flight=smoothFlight(p,{armL,armR,legL,legR,head},this.state.gear.disguise==='dz_fairy',this.playerFlying,this.moving,this.time,dt,this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose);
+    const flight=smoothFlight(p,{armL,armR,legL,legR,head},this.state.gear.disguise==='dz_fairy',this.playerFlying,this.moving,this.time,dt,(this.disguiseT<=0||this.disguiseMotion==='hover')&&this.punchT<=0&&this.spinT<=0&&!pose);
     if(flight.weight>1e-4)lean=flight.lean;
     lift+=flight.lift+(flight.weight>0?(flight.air-Number(this.playerFlying))*1.7:0);
     animateCostume(p,this.state.gear.disguise,this.playerFlying,this.moving,this.time);

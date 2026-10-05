@@ -36,7 +36,7 @@ test('all upgraded actions produce matching local and remote poses throughout re
 });
 
 test('hero hover is upright, moving flight tilts 30 degrees, and fairy flight has its own relaxed pose',()=>{
-  const hero=limbs();assert.equal(poseFlight(hero,false,false,1).lean,0);assert.equal(poseFlight(hero,false,true,1).lean,Math.PI/10);assert.ok(hero.armL.rotation.x<-1.5);
+  const hero=limbs();assert.equal(poseFlight(hero,false,false,1).lean,0);assert.equal(poseFlight(hero,false,true,1).lean,50*Math.PI/180);assert.ok(hero.armL.rotation.x<-1.5);
   const fairy=limbs();assert.ok(poseFlight(fairy,true,true,1).lean<.2);assert.ok(fairy.armL.rotation.z<-.5);
 });
 
