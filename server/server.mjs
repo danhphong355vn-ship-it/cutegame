@@ -53,7 +53,7 @@ export async function createGameServer(options = {}) {
   }
   const store = options.accountStore || await createAccountStore({ dataDir, databaseUrl });
   const accounts = new Map(), sessions = new Map(), peers = new Map(), rooms = new Map(), parties = new Map();
-  const limits = new Map(), chatReceipts = new Map();
+  const limits = new Map(), chatReceipts = new Map(), pendingDuelInvites = new Map();
   let closing = false;
   const remember=value=>rememberAccount(accounts,value);
   try {
@@ -429,9 +429,12 @@ export async function createGameServer(options = {}) {
                 return { ok: true };
               }
             });
-            const updated = await store.get(u.id);
+            const updated = remember(await store.get(u.id));
             const peer = peers.get(u.id);
-            if (peer) send(peer.socket, { type: 'profile', profile: updated.profile, revision: updated.profileRevision, authorityVersion: 1 });
+            if (peer) {
+              peer.account = updated;
+              send(peer.socket, { type: 'profile', profile: updated.profile, revision: updated.profileRevision, authorityVersion: 1 });
+            }
           } catch {}
         }
         const itemName = data.itemName || (type === 'energy' ? 'Năng lượng' : itemId);
@@ -536,6 +539,80 @@ export async function createGameServer(options = {}) {
         const room = rooms.get(peer.room);
         if(message.type==='arenaJoin'){rate(`arena:${account.id}`,6,10000);await combatAuthority.flushPeerHealth(peer);if(peers.get(account.id)!==peer||socket.readyState!==WebSocket.OPEN)return;combatAuthority.resetPeer(peer,{reason:'arena'});combatAuthority.arena.join(peer);}
         else if(message.type==='arenaLeave'){combatAuthority.arena.leave(peer);combatAuthority.resetPeer(peer,{reason:'arena'});}
+        else if(message.type==='duelChallenge'){
+          rate(`duel:${account.id}`,10,10000);
+          const targetId=text(message.targetId,64);
+          const bet=Math.max(0,Math.floor(Number(message.bet)||0));
+          const validBets=[0,100,500,1000,5000];
+          if(!validBets.includes(bet))throw failure(400,'Mức cược không hợp lệ.');
+          const targetPeer=peers.get(targetId);
+          if(!targetPeer||targetId===account.id)throw failure(400,'Người chơi không khả dụng.');
+          if((account.profile.energy||0)<bet)throw failure(400,'Bạn không đủ Vàng để cược mức này!');
+          if((targetPeer.account.profile.energy||0)<bet)throw failure(400,`${targetPeer.account.profile.name} không có đủ ${bet.toLocaleString()} Vàng để đấu cược!`);
+          if(combatAuthority.arena.isDueled(account.id)||combatAuthority.arena.isDueled(targetId))throw failure(400,'Một trong hai người đang trong trận đấu võ đài.');
+          const inviteId=`${account.id}:${targetId}`;
+          if(pendingDuelInvites.has(inviteId)){clearTimeout(pendingDuelInvites.get(inviteId).timer);pendingDuelInvites.delete(inviteId);}
+          const timer=setTimeout(()=>{
+            if(pendingDuelInvites.has(inviteId)){
+              pendingDuelInvites.delete(inviteId);
+              send(peer.socket,{type:'duelExpired',opponentName:targetPeer.account.profile.name});
+              send(targetPeer.socket,{type:'duelExpired',opponentName:account.profile.name});
+            }
+          },15000);
+          pendingDuelInvites.set(inviteId,{fromId:account.id,toId:targetId,bet,timer});
+          send(targetPeer.socket,{type:'duelInvite',fromId:account.id,fromName:account.profile.name,fromLevel:account.profile.level||1,bet,timeout:15});
+          send(peer.socket,{type:'duelPending',toId:targetId,toName:targetPeer.account.profile.name,bet,timeout:15});
+        }
+        else if(message.type==='duelDecline'){
+          const fromId=text(message.fromId,64),inviteId=`${fromId}:${account.id}`;
+          const invite=pendingDuelInvites.get(inviteId);
+          if(invite){
+            clearTimeout(invite.timer);pendingDuelInvites.delete(inviteId);
+            const challengerPeer=peers.get(fromId);
+            if(challengerPeer)send(challengerPeer.socket,{type:'duelDeclined',opponentName:account.profile.name});
+          }
+        }
+        else if(message.type==='duelAccept'){
+          const fromId=text(message.fromId,64),inviteId=`${fromId}:${account.id}`;
+          const invite=pendingDuelInvites.get(inviteId);
+          if(!invite)throw failure(400,'Lời thách đấu đã hết hạn hoặc không tồn tại.');
+          clearTimeout(invite.timer);pendingDuelInvites.delete(inviteId);
+          const challengerPeer=peers.get(fromId);
+          if(!challengerPeer||challengerPeer.socket.readyState!==WebSocket.OPEN)throw failure(400,'Đối thủ đã rời mạng.');
+          if((account.profile.energy||0)<invite.bet)throw failure(400,'Bạn không đủ Vàng để cược mức này!');
+          if((challengerPeer.account.profile.energy||0)<invite.bet)throw failure(400,`${challengerPeer.account.profile.name} không còn đủ Vàng để tham gia!`);
+          if(invite.bet>0){
+            await store.command({
+              actorId:challengerPeer.account.id,
+              requestId:`duel-bet-${Date.now()}-${challengerPeer.account.id.slice(0,6)}`,
+              hash:'0000000000000000000000000000000000000000000000000000000000000000',
+              expectedRevision:challengerPeer.account.profileRevision||0,
+              relatedIds:[account.id],
+              run:async records=>{
+                const c=records.get(challengerPeer.account.id),t=records.get(account.id);
+                if(c)c.profile.energy=Math.max(0,(c.profile.energy||0)-invite.bet);
+                if(t)t.profile.energy=Math.max(0,(t.profile.energy||0)-invite.bet);
+                return {ok:true};
+              }
+            });
+            const cAcc=remember(await store.get(challengerPeer.account.id)),tAcc=remember(await store.get(account.id));
+            challengerPeer.account=cAcc; peer.account=tAcc;
+            send(challengerPeer.socket,{type:'profile',profile:cAcc.profile,revision:cAcc.profileRevision,authorityVersion:1});
+            send(peer.socket,{type:'profile',profile:tAcc.profile,revision:tAcc.profileRevision,authorityVersion:1});
+          }
+          if(challengerPeer.visit)endVisit(challengerPeer);
+          if(peer.visit)endVisit(peer);
+          challengerPeer.planet='arena';challengerPeer.account.profile.planet='arena';
+          join(challengerPeer,'arena',null,null,true);
+          peer.planet='arena';peer.account.profile.planet='arena';
+          join(peer,'arena',null,null,true);
+          combatAuthority.arena.startDuel(challengerPeer,peer,invite.bet,invite.bet*2);
+          const duelRoom=rooms.get(peer.room);
+          if(duelRoom){
+            const duelNotice=`⚔️ ${challengerPeer.account.profile.name} và ${account.profile.name} vừa bước vào Võ Đài La Mã (Cược: ${invite.bet.toLocaleString()} Vàng)!`;
+            broadcast(duelRoom,{type:'chat',id:'system',name:'ĐẤU TRƯỜNG',message:duelNotice,at:Date.now()});
+          }
+        }
         else if(message.type==='eventStatus'){send(socket,{type:'worldEventStatus',...worldEvents.status()});combatAuthority.arena.publish(room);}
         else if(message.type==='ping'){send(socket,{type:'pong',at:message.at});}
         else if (message.type === 'active') { peer.active = message.active === true; if (room) elect(room); }
@@ -606,6 +683,12 @@ export async function createGameServer(options = {}) {
     });
     socket.on('close', () => {
       if (peers.get(account.id) !== peer) return;
+      for (const [key, invite] of pendingDuelInvites) {
+        if (invite.fromId === account.id || invite.toId === account.id) {
+          clearTimeout(invite.timer);
+          pendingDuelInvites.delete(key);
+        }
+      }
       leave(peer); peers.delete(account.id);
       for (const id of account.friends) if (accounts.has(id)) tellFriends(accounts.get(id));
     });

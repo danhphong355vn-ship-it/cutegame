@@ -188,7 +188,13 @@ app.innerHTML = `
     <div class="space-help">Hold to steer <i>•</i> <kbd>W</kbd> <kbd>A</kbd> <kbd>D</kbd> fly <i>•</i> <kbd>Shift</kbd> boost <i>•</i> <kbd>S</kbd> brake <i>•</i> <kbd>L</kbd> land</div>
   </div>
   <div id="warp-flash"></div>
-  <div id="title-screen">${renderTitleScreen({
+  <div id="title-screen"></div>
+  <div id="dialog-layer" hidden><section id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header><span id="dialog-icon" aria-hidden="true"></span><div><span id="dialog-kicker" class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="dialog-title"></h2></div><button class="close-button" data-action="close" aria-label="Close dialog">×</button></header><div id="dialog-body"></div></section></div>
+  <div id="toasts" role="status" aria-live="polite"></div><div id="floating-text"></div><div id="damage-flash"></div>
+`;
+const titleScreenMount = document.getElementById('title-screen');
+if (titleScreenMount) {
+  titleScreenMount.innerHTML = renderTitleScreen({
     saved: !!saved,
     name: saved?.name ?? '',
     color: state.color,
@@ -198,10 +204,8 @@ app.innerHTML = `
     hatId: state.gear.hat,
     petId: state.gear.pet,
     languageSelectorHtml: languageSelector('welcome'),
-  })}</div>
-  <div id="dialog-layer" hidden><section id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header><span id="dialog-icon" aria-hidden="true"></span><div><span id="dialog-kicker" class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="dialog-title"></h2></div><button class="close-button" data-action="close" aria-label="Close dialog">×</button></header><div id="dialog-body"></div></section></div>
-  <div id="toasts" role="status" aria-live="polite"></div><div id="floating-text"></div><div id="damage-flash"></div>
-`;
+  });
+}
 const refreshStaticLanguage=bindLanguage(app), refreshWorldLanguage=bindLanguage($('#world'));
 // Keep the first visit on a loading screen until the shared character and world models
 // have either loaded or exhausted their quick retries. Failed optional art keeps its fallback.

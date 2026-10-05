@@ -1,5 +1,5 @@
 import type { GameBridge, NetworkDrop } from './game-bridge.ts';
-import { newGame, type SaveState, type PlanetId, type Difficulty } from './model.ts';
+import { newGame, ITEMS, type SaveState, type PlanetId, type Difficulty } from './model.ts';
 import type { LookId } from './looks.ts';
 import { INDOOR_Y } from './house.ts';
 import './online.css';
@@ -7,7 +7,17 @@ import { t, onLanguageChange } from './i18n.ts';
 import {gameplayKey} from './gameplay-controls.ts';
 import type {GameIntent,ActionReply} from './actions.ts';
 import {ARENA,inArena} from './world-events.ts';
-import {ArenaView} from './arena-view.ts';
+
+type ArenaViewInstance = { group: { parent: unknown }; attach(root: unknown, scene: unknown, world: unknown): void; detach(): void; update(dt: number, active: boolean, world: unknown): void };
+let ArenaViewCtor: (new () => ArenaViewInstance) | null = null;
+let arenaViewLoading = false;
+function loadArenaView() {
+  if (!ArenaViewCtor && !arenaViewLoading) {
+    arenaViewLoading = true;
+    import('./arena-view.ts').then(m => { ArenaViewCtor = m.ArenaView; }).catch(() => {});
+  }
+  return ArenaViewCtor;
+}
 
 interface Explorer { id:string;username?:string;name:string;color:string;level:number;gear:SaveState['gear'];look?:LookId;online?:boolean;x?:number;z?:number;y?:number;facing?:number;moving?:boolean;space?:string;planet?:string;difficulty?:string }
 interface Home extends Explorer { discovered?:PlanetId[]; plots:SaveState['plots'];farm?:SaveState['farm'];placed?:unknown[];decorations?:unknown[];helper?:unknown;friends?:unknown[] }
@@ -133,12 +143,13 @@ export function initOnline(game:GameBridge) {
   const activities=el('div','online-activities'),bossBanner=el('div','world-boss-banner'),arenaInfo=el('div','arena-info');
   const arenaButton=button('⚔ Tham gia võ đài',()=>send({type:world().arenaActive?'arenaLeave':'arenaJoin'}));
   activities.append(bossBanner,arenaInfo,arenaButton);document.body.append(activities);
-  let arenaView:ArenaView|null=null;
+  let arenaView:ArenaViewInstance|null=null;
   function syncArenaView(){
     const currentWorld=world() as any,presence=game.getPresence();
-    const shouldShow=presence.planet===ARENA.planet&&typeof currentWorld?.root?.add==='function'&&typeof ArenaView==='function';
-    if(shouldShow){
-      if(!arenaView)arenaView=new ArenaView();
+    const Ctor=loadArenaView();
+    const shouldShow=presence.planet===ARENA.planet&&typeof currentWorld?.root?.add==='function'&&typeof Ctor==='function';
+    if(shouldShow && Ctor){
+      if(!arenaView)arenaView=new Ctor();
       if(arenaView.group.parent!==currentWorld.root){
         arenaView.attach(currentWorld.root,currentWorld.scene,currentWorld);
       }
@@ -191,13 +202,219 @@ export function initOnline(game:GameBridge) {
     if(!sameRoom){captureChatDraft();chatReady=false;refreshChatControls();}return true;
   }
 
+  const playerCardDialog = el('dialog', 'player-card-dialog') as HTMLDialogElement;
+  if (!playerCardDialog.showModal) (playerCardDialog as any).showModal = () => { playerCardDialog.setAttribute('open', ''); };
+  if (!playerCardDialog.close) (playerCardDialog as any).close = () => { playerCardDialog.removeAttribute('open'); };
+  document.body?.append?.(playerCardDialog);
+  playerCardDialog.addEventListener('click', event => {
+    if (event.target === playerCardDialog) playerCardDialog.close();
+  });
+
+  const duelInviteBanner = el('div', 'duel-invite-banner');
+  duelInviteBanner.style.display = 'none';
+  document.body?.append?.(duelInviteBanner);
+
+  const duelCountdownOverlay = el('div', 'duel-countdown-overlay');
+  duelCountdownOverlay.style.display = 'none';
+  document.body?.append?.(duelCountdownOverlay);
+
+  const duelTopBar = el('div', 'duel-topbar');
+  duelTopBar.style.display = 'none';
+  document.body?.append?.(duelTopBar);
+
+  const duelResultModal = el('div', 'duel-result-modal');
+  duelResultModal.style.display = 'none';
+  document.body?.append?.(duelResultModal);
+
+  function playDuelAlertTone() {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(660, ctx.currentTime + 0.2);
+      osc.frequency.exponentialRampToValueAtTime(1100, ctx.currentTime + 0.35);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.5);
+    } catch {}
+  }
+
+  function openBetPicker(targetPlayer: Explorer) {
+    const curEnergy = game.getState().energy || 0;
+    playerCardDialog.replaceChildren();
+
+    const header = el('header', 'player-card-header');
+    header.append(el('h3', '', `⚔️ Cược Solo 1v1: ${targetPlayer.name}`));
+    const closeBtn = el('button', 'player-card-close', '✕');
+    closeBtn.onclick = () => playerCardDialog.close();
+    header.append(closeBtn);
+
+    const body = el('div', 'player-card-body');
+    const walletInfo = el('div', 'bet-wallet-info');
+    walletInfo.innerHTML = `<span>🪙 Số Vàng của bạn:</span> <span style="font-size:15px; color:#ffd700;">${curEnergy.toLocaleString()} Vàng</span>`;
+    body.append(walletInfo);
+
+    const optionsList = el('div', 'bet-options-list');
+    const betTiers = [
+      { bet: 0, label: '🌿 Đấu Giao Hữu', sub: 'Miễn phí cược · Không mất vàng' },
+      { bet: 100, label: '🪙 Cược 100 Vàng', sub: 'Thắng nhận 200 Vàng' },
+      { bet: 500, label: '🪙 Cược 500 Vàng', sub: 'Thắng nhận 1.000 Vàng' },
+      { bet: 1000, label: '🪙 Cược 1.000 Vàng', sub: 'Thắng nhận 2.000 Vàng' },
+      { bet: 5000, label: '💎 Cược 5.000 Vàng', sub: 'Trận Đấu Cao Thủ · Thắng nhận 10.000 Vàng' },
+    ];
+
+    let selectedBet = 0;
+    const cards: HTMLElement[] = [];
+
+    betTiers.forEach((tier, index) => {
+      const card = el('div', `bet-card-option ${index === 0 ? 'selected' : ''}`);
+      const isAffordable = curEnergy >= tier.bet;
+      if (!isAffordable) card.classList.add('disabled');
+
+      card.innerHTML = `
+        <div class="bet-card-label">${tier.label}</div>
+        <div class="bet-card-sub">${tier.sub}</div>
+      `;
+
+      card.onclick = () => {
+        if (!isAffordable) {
+          announce(`Bạn không đủ Vàng để cược mức ${tier.bet.toLocaleString()}!`);
+          return;
+        }
+        selectedBet = tier.bet;
+        cards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+      };
+
+      cards.push(card);
+      optionsList.append(card);
+    });
+    body.append(optionsList);
+
+    const actions = el('div', 'player-actions-grid');
+    const sendBtn = el('button', 'btn-player-action btn-duel', '⚔️ Gửi Lời Thách Đấu');
+    sendBtn.onclick = () => {
+      if (curEnergy < selectedBet) {
+        announce('Bạn không đủ Vàng để thách đấu mức này!');
+        return;
+      }
+      send({ type: 'duelChallenge', targetId: targetPlayer.id, bet: selectedBet });
+      playerCardDialog.close();
+      announce(`Đã gửi lời mời Solo 1v1 (${selectedBet.toLocaleString()} Vàng) tới ${targetPlayer.name}!`);
+    };
+    const backBtn = el('button', 'btn-player-action btn-chat', '← Quay Lại');
+    backBtn.onclick = () => openPlayer(targetPlayer.id);
+
+    actions.append(sendBtn, backBtn);
+    body.append(actions);
+
+    playerCardDialog.append(header, body);
+    if (!playerCardDialog.open) playerCardDialog.showModal();
+  }
+
   function openPlayer(id:string){
-    const player=players.get(id);if(!player||id===account?.id)return;captureChatDraft();render();dialog.showModal();
-    const card=el('section','social-player-card'),title=el('h3','',player.name),actions=el('div','social-actions');card.append(title);
-    if(player.username)card.append(el('p','social-small','@'+player.username));
-    if(friends.some(friend=>friend.id===id))actions.append(button('Visit garden',()=>{sendRoom({type:'visit',id});dialog.close();}));
-    else actions.append(button('Send friend request',async()=>{try{await api('friends/request',{id});announce('Friend request sent.');}catch(error){announce((error as Error).message);}}));
-    card.append(actions);content.prepend(card);
+    const player=players.get(id);if(!player||id===account?.id)return;
+    playerCardDialog.replaceChildren();
+
+    const header = el('header', 'player-card-header');
+    header.append(el('h3', '', '🧙 THÔNG TIN NGƯỜI CHƠI'));
+    const closeBtn = el('button', 'player-card-close', '✕');
+    closeBtn.onclick = () => playerCardDialog.close();
+    header.append(closeBtn);
+
+    const body = el('div', 'player-card-body');
+
+    // Hero Profile Card
+    const banner = el('div', 'player-hero-banner');
+    const avatar = el('div', 'player-avatar-large', player.name.slice(0, 1).toUpperCase());
+    avatar.style.background = player.color || '#6366f1';
+
+    const meta = el('div', 'player-hero-meta');
+    const nameEl = el('div', 'player-hero-name', player.name);
+    const subEl = el('div', 'player-hero-sub');
+    if (player.username) subEl.append(el('span', '', `@${player.username}`));
+    subEl.append(el('span', 'player-badge-level', `⭐ Cấp ${player.level || 1}`));
+    meta.append(nameEl, subEl);
+    banner.append(avatar, meta);
+    body.append(banner);
+
+    // Gear Section
+    const gearSec = el('div', 'player-gear-section');
+    gearSec.append(el('div', 'player-section-title', '⚔️ Trang Bị Đang Mặc'));
+    const gearGrid = el('div', 'player-gear-grid');
+
+    const gearSlots = [
+      { icon: '⚔️', label: 'Vũ khí', id: player.gear?.weapon },
+      { icon: '🧢', label: 'Mũ', id: player.gear?.hat },
+      { icon: '🥋', label: 'Trang phục', id: player.gear?.outfit },
+      { icon: '🐾', label: 'Thú cưng', id: player.gear?.pet },
+    ];
+
+    gearSlots.forEach(slot => {
+      const itemEl = el('div', 'player-gear-item');
+      const itemTitle = (slot.id && typeof ITEMS !== 'undefined' && (ITEMS as any)?.[slot.id]?.name) || (slot.id ? String(slot.id) : 'Chưa mang');
+      itemEl.innerHTML = `<span class="player-gear-icon">${slot.icon}</span><span class="player-gear-name" title="${itemTitle}">${itemTitle}</span>`;
+      gearGrid.append(itemEl);
+    });
+    gearSec.append(gearGrid);
+    body.append(gearSec);
+
+    // 4 Action Buttons
+    const actionsGrid = el('div', 'player-actions-grid');
+
+    // 1. Thách đấu cá cược
+    const duelBtn = el('button', 'btn-player-action btn-duel', '⚔️ Thách Đấu Cá Cược 1v1');
+    duelBtn.onclick = () => openBetPicker(player);
+
+    // 2. Nhắn tin riêng
+    const chatBtn = el('button', 'btn-player-action btn-chat', '💬 Nhắn Tin');
+    chatBtn.onclick = () => {
+      playerCardDialog.close();
+      hudChatBtn.style.display = 'none';
+      hudChatForm.style.display = 'block';
+      hudChatInput.value = `@${player.name} `;
+      hudChatInput.focus();
+    };
+
+    // 3. Kết bạn
+    const isFriend = friends.some(f => f.id === id);
+    const friendBtn = el('button', 'btn-player-action btn-friend', isFriend ? '🤝 Đã Là Bạn' : '🤝 Kết Bạn');
+    if (isFriend) {
+      friendBtn.style.opacity = '0.7';
+    } else {
+      friendBtn.onclick = async () => {
+        try {
+          await api('friends/request', { id });
+          announce('Đã gửi lời mời kết bạn.');
+          friendBtn.textContent = 'Đã gửi lời mời';
+          friendBtn.style.opacity = '0.7';
+        } catch (e) {
+          announce((e as Error).message);
+        }
+      };
+    }
+
+    // 4. Thăm vườn
+    const visitBtn = el('button', 'btn-player-action btn-visit', '🏡 Thăm Vườn');
+    visitBtn.onclick = () => {
+      if (isFriend) {
+        sendRoom({ type: 'visit', id });
+        playerCardDialog.close();
+      } else {
+        announce('Cần kết bạn trước khi thăm vườn nhà!');
+      }
+    };
+
+    actionsGrid.append(duelBtn, chatBtn, friendBtn, visitBtn);
+    body.append(actionsGrid);
+
+    playerCardDialog.append(header, body);
+    if (!playerCardDialog.open) playerCardDialog.showModal();
   }
   world().onRemotePlayerClick=openPlayer;
   document.addEventListener('keydown',event=>{
@@ -271,6 +488,120 @@ export function initOnline(game:GameBridge) {
     }})().finally(()=>{saving=null;if(actionQueue.length&&account&&!stopped){if(sessionEpoch!==epoch)void flushSave();else saveTimer=window.setTimeout(()=>void flushSave(),Math.max(5000,actionRetryAt-Date.now()));}});
     return saving;
   }
+  function showDuelCountdown(onFinish: () => void) {
+    duelCountdownOverlay.style.display = 'flex';
+    const textEl = el('div', 'duel-countdown-text', '3');
+    duelCountdownOverlay.replaceChildren(textEl);
+
+    let count = 3;
+    const timer = setInterval(() => {
+      count--;
+      if (count === 2) textEl.textContent = '2';
+      else if (count === 1) textEl.textContent = '1';
+      else if (count === 0) {
+        textEl.textContent = '⚔️ CHIẾN! ⚔️';
+        textEl.style.color = '#ef4444';
+      } else {
+        clearInterval(timer);
+        duelCountdownOverlay.style.display = 'none';
+        onFinish();
+      }
+    }, 850);
+  }
+
+  function showDuelResult(result: { won: boolean; pot: number; bet: number; opponent?: string; winner?: string; loser?: string; forfeit?: boolean }) {
+    duelTopBar.style.display = 'none';
+    duelResultModal.style.display = 'flex';
+    const card = el('div', 'duel-result-card');
+
+    const oppName = result.opponent || (result.won ? result.loser : result.winner) || 'Đối thủ';
+    if (result.won) {
+      for (let i = 0; i < 8; i++) {
+        setTimeout(() => {
+          const colors = ['#ffd700', '#ff3366', '#00ffcc', '#ff9900', '#a855f7'];
+          const col = colors[Math.floor(Math.random() * colors.length)];
+          world().burst?.(world().position.x + (Math.random() - 0.5) * 6, world().position.z + (Math.random() - 0.5) * 6, col, 12);
+        }, i * 200);
+      }
+      const curState = game.getState();
+      curState.energy = (curState.energy || 0) + (result.pot || 0);
+      game.applyState(curState);
+
+      const winReason = result.forfeit ? `${oppName} đã bỏ cuộc giữa trận!` : `Bạn đã hạ gục anh hùng ${oppName}!`;
+      card.innerHTML = `
+        <div class="duel-result-icon">👑</div>
+        <h2 class="duel-result-title win">CHIẾN THẮNG TUYỆT ĐỐI!</h2>
+        <p class="duel-result-sub">${winReason}</p>
+        <div class="duel-reward-box">🏆 Nhận Thưởng: +${(result.pot || 0).toLocaleString()} Vàng</div>
+        <button class="btn-result-close">TIẾP TỤC</button>
+      `;
+    } else {
+      const loseReason = result.forfeit ? `Bạn đã rời khỏi võ đài trước khi trận đấu kết thúc.` : `Bạn đã bị ${oppName} đánh bại trên võ đài.`;
+      card.innerHTML = `
+        <div class="duel-result-icon">💀</div>
+        <h2 class="duel-result-title loss">THẤT BẠI TRÊN VÕ ĐÀI!</h2>
+        <p class="duel-result-sub">${loseReason}</p>
+        <div class="duel-safe-box">🛡️ Mất ${result.bet ? result.bet.toLocaleString() : 0} Vàng tiền cược.<br>Toàn bộ trang bị và đồ trong ba lô được BẢO TOÀN 100%! Đã hồi phục đầy máu.</div>
+        <button class="btn-result-close">ĐỒNG Ý</button>
+      `;
+    }
+
+    card.querySelector('button')!.onclick = () => {
+      duelResultModal.style.display = 'none';
+    };
+
+    duelResultModal.replaceChildren(card);
+  }
+
+  let inviteCountdownTimer: any = null;
+  function showDuelInvite(invite: { fromId: string; fromName: string; fromLevel: number; bet: number; timeout: number }) {
+    playDuelAlertTone();
+    duelInviteBanner.style.display = 'block';
+    if (inviteCountdownTimer) clearInterval(inviteCountdownTimer);
+
+    let remain = invite.timeout || 15;
+    const updateUi = () => {
+      duelInviteBanner.innerHTML = `
+        <div class="duel-invite-title">
+          <span>⚔️ LỜI THÁCH ĐẤU SOLO 1V1</span>
+          <span style="font-size:12px; color:#f87171;">⏳ ${remain}s</span>
+        </div>
+        <div class="duel-invite-msg">
+          <b>${invite.fromName}</b> (Cấp ${invite.fromLevel}) thách đấu bạn vào Võ Đài La Mã!<br>
+          Mức cược: <b>${invite.bet > 0 ? `${invite.bet.toLocaleString()} Vàng` : '🌿 Giao Hữu (0 Vàng)'}</b> (Tổng quỹ: <b>${(invite.bet * 2).toLocaleString()} Vàng</b>)
+        </div>
+        <div class="duel-invite-actions">
+          <button class="btn-accept-duel">✅ CHẤP NHẬN CHIẾN</button>
+          <button class="btn-decline-duel">❌ TỪ CHỐI</button>
+        </div>
+      `;
+
+      duelInviteBanner.querySelector('.btn-accept-duel')?.addEventListener('click', () => {
+        clearInterval(inviteCountdownTimer);
+        duelInviteBanner.style.display = 'none';
+        send({ type: 'duelAccept', fromId: invite.fromId });
+      });
+
+      duelInviteBanner.querySelector('.btn-decline-duel')?.addEventListener('click', () => {
+        clearInterval(inviteCountdownTimer);
+        duelInviteBanner.style.display = 'none';
+        send({ type: 'duelDecline', fromId: invite.fromId });
+      });
+    };
+
+    updateUi();
+    inviteCountdownTimer = setInterval(() => {
+      remain--;
+      if (remain <= 0) {
+        clearInterval(inviteCountdownTimer);
+        duelInviteBanner.style.display = 'none';
+        send({ type: 'duelDecline', fromId: invite.fromId });
+      } else {
+        updateUi();
+      }
+    }, 1000);
+  }
+
   function connect(){
     if(!account||stopped)return;releaseChat();chatReady=false;refreshChatControls();let desiredParty=party,restoring=false,fallbackJoin:any=null;const desiredPlanet=game.getPresence().planet;const socketUrl=new URL(`${serviceBase}socket`,location.href);socketUrl.protocol=location.protocol==='https:'?'wss:':'ws:';socket=new WebSocket(socketUrl);
     const connection=socket;
@@ -299,13 +630,38 @@ export function initOnline(game:GameBridge) {
       }
       else if(message.type==='worldEventStatus'){eventBoss=message.active;refreshActivities();}
       else if(message.type==='worldEvent'){eventBoss=message.phase==='spawn'?message.boss:null;announce(message.message);if(Array.isArray(message.ranking))announce('🏆 Sát thương: '+message.ranking.slice(0,5).map((p:any,i:number)=>`${i+1}. ${p.name}: ${p.damage}`).join(' · '));refreshActivities();}
-      else if(message.type==='arenaJoined'){const current=world();current.arenaActive=true;current.position.x=message.spawnX;current.position.z=message.spawnZ;current.destination=null;current.route=[];announce('Đã vào võ đài! Bảo vệ 3 giây. Thua không mất đồ.');refreshActivities();}
-      else if(message.type==='arenaLeft'){world().arenaActive=false;world().arenaStunUntil=0;world().arenaTargets=[];refreshActivities();}
+      else if(message.type==='duelInvite')showDuelInvite(message);
+      else if(message.type==='duelPending')announce(`⚔️ Đang chờ ${message.toName} phản hồi lời thách đấu (${(message.bet||0).toLocaleString()} Vàng)...`);
+      else if(message.type==='duelDeclined')announce(`❌ ${message.opponentName} đã từ chối lời thách đấu.`);
+      else if(message.type==='duelExpired')announce(`⏳ Lời thách đấu với ${message.opponentName} đã hết hạn.`);
+      else if(message.type==='arenaJoined'){
+        const current=world();current.arenaActive=true;current.position.x=message.spawnX;current.position.z=message.spawnZ;current.destination=null;current.route=[];
+        if(message.isDuel){
+          showDuelCountdown(()=>{
+            duelTopBar.style.display='flex';
+            duelTopBar.innerHTML=`⚔️ <span>ĐẤU VỚI: <b>${message.opponentName||'Đối thủ'}</b></span> <span class="duel-topbar-pot">🏆 Quỹ: ${(message.pot||0).toLocaleString()} Vàng</span>`;
+          });
+        }else{
+          announce('Đã vào võ đài! Bảo vệ 3 giây. Thua không mất đồ.');
+        }
+        refreshActivities();
+      }
+      else if(message.type==='arenaLeft'){
+        world().arenaActive=false;world().arenaStunUntil=0;world().arenaTargets=[];
+        duelTopBar.style.display='none';
+        refreshActivities();
+      }
       else if(message.type==='arenaControl'){world().arenaStunUntil=Date.now()+Math.max(0,Math.min(2000,message.duration||0));}
       else if(message.type==='arenaPosition'){if(world().arenaActive){world().position.x=message.x;world().position.z=message.z;}}
       else if(message.type==='arena'){arenaPlayers=message.players||[];refreshActivities();}
       else if(message.type==='arenaHit'){world().hurtFeedback(message.damage);}
-      else if(message.type==='arenaResult'){announce(message.won?`🏆 Bạn thắng ${message.loser}!`:`Bạn thua ${message.winner}. Đồ và máu ngoài võ đài được giữ nguyên.`);}
+      else if(message.type==='arenaResult'){
+        if(message.isDuel){
+          showDuelResult(message);
+        }else{
+          announce(message.won?`🏆 Bạn thắng ${message.loser}!`:`Bạn thua ${message.winner}. Đồ và máu ngoài võ đài được giữ nguyên.`);
+        }
+      }
       else if(message.type==='environment')world().applyEnvironmentSnapshot(message.snapshot);
       else if(message.type==='gardenEvent'){
         if(message.blocked){

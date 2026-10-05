@@ -3732,7 +3732,12 @@ for (const [raw, fact] of Object.entries(PLANET_FACTS)) {
     const id = sourcePlanet(raw) as PlanetId, [enemy, health, attack, xp] = basicEnemy[id];
     PLANETS[id] = { name: fact.name, icon: fact.emoji, level: fact.lvl, color: fact.ground?.[0] || fact.grad[0], sky: fact.sky, grad: fact.grad, ground: fact.ground || ['#86d25a', '#9be36f', '#e8cf92'], description: `${fact.name} · Landing from level ${fact.lvl}.`, enemy, health, attack, xp, bosses: fact.bosses || ['bear', 'treant', 'croc', 'mushking'], spawns: fact.spawns || [['mushroom', 20], ['boar', 12], ['bee', 6], ['wolf', 10], ['chomper', 14], ['cactus', 14]] };
 }
-PLANETS.arena = { name: 'Đấu Trường La Mã', icon: '⚔️', level: 1, color: '#2b2137', sky: '#2b1b3d', grad: ['#4b2d68', '#2b1b3d', '#1a1226'], ground: ['#282033', '#392c47', '#ffd700'], description: 'Thánh địa giác đấu cổ đại. Nơi hội tụ các anh hùng so tài chiêu thức đỉnh cao.', enemy: 'golem', health: 1000, attack: 10, xp: 100, bosses: [], spawns: [] };
+Object.defineProperty(PLANETS, 'arena', {
+    value: { name: 'Đấu Trường La Mã', icon: '⚔️', level: 1, color: '#2b2137', sky: '#2b1b3d', grad: ['#4b2d68', '#2b1b3d', '#1a1226'], ground: ['#282033', '#392c47', '#ffd700'], description: 'Thánh địa giác đấu cổ đại. Nơi hội tụ các anh hùng so tài chiêu thức đỉnh cao.', enemy: 'golem', health: 1000, attack: 10, xp: 100, bosses: [], spawns: [] },
+    enumerable: false,
+    configurable: true,
+    writable: true,
+});
 export const FISH_WEIGHTS: Record<string, [
     string,
     number
