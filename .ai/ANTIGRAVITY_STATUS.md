@@ -3,11 +3,11 @@
 Status: DONE
 
 Task:
-Tối ưu hóa mạng (giảm 70% gói tin thừa khi đứng yên, đo ping thời gian thực) và hiển thị bảng đo FPS & Ping (🟢 60 FPS | Ping: 15ms) trên màn hình game.
+Sửa lỗi trạm tàu không cất cánh khi gặp lỗi 409 revision trong src/online.ts: sau lỗi 409, reset submitted và cập nhật expectedRevision mới từ session để action job được retry với revision mới, giúp perform('launch') hoàn thành và launchPending không bị kẹt.
 
 Claimed files:
 
-Last commit: 47a3b30
+Last commit: 1d5c0af
 
 Notes:
-Hoàn thành tích hợp FPS/Ping HUD hiển thị trực quan và tối ưu motion throttling. Build và test pass 100%.
+Đã hoàn thành sửa lỗi 409 revision trong src/online.ts và bổ sung bài test tests/online-launch.test.mjs. Toàn bộ 35/35 unit test liên quan đều pass, build thành công 100%. Antigravity giải phóng claimed files để Codex tiếp tục phần việc còn lại khi sẵn sàng.
