@@ -249,7 +249,7 @@ export function initOnline(game:GameBridge) {
       }catch(error){if(account?.id!==accountId||sessionEpoch!==epoch)return;const statusCode=(error as {status?:number}).status;
         if(statusCode===401){expireSession();return;}
         if(statusCode===429){const delay=(error as {retryAfterMs?:number}).retryAfterMs;actionRetryAt=Date.now()+Math.max(1000,Number.isFinite(delay)?delay!:60000);status='Action pending';setSaveStatus('◌ Saving online…');refreshButton();break;}
-        if(statusCode===409){try{const fresh=await api<Session>('auth/session');if(account?.id!==accountId||sessionEpoch!==epoch)return;if(!fresh.account){expireSession();return;}if(fresh.account.id!==accountId){begin(fresh);return;}revision=fresh.revision||0;if(fresh.profile)game.applyAuthoritativeState(fresh.profile);}catch{break;}continue;}
+        if(statusCode===409){try{const fresh=await api<Session>('auth/session');if(account?.id!==accountId||sessionEpoch!==epoch)return;if(!fresh.account){expireSession();return;}if(fresh.account.id!==accountId){begin(fresh);return;}const prevRevision=revision;revision=fresh.revision||0;if(fresh.profile)game.applyAuthoritativeState(fresh.profile);if(revision>prevRevision||job.expectedRevision!==revision){job.expectedRevision=revision;delete job.submitted;rememberActions();continue;}}catch{break;}actionQueue.shift();rememberActions();waiting.get(job.requestId)?.reject(error as Error);waiting.delete(job.requestId);continue;}
         if(statusCode&&statusCode<500){actionQueue.shift();rememberActions();waiting.get(job.requestId)?.reject(error as Error);waiting.delete(job.requestId);continue;}
         status='Action pending';setSaveStatus('○ Action pending — reconnect to finish');refreshButton();break;
       }
