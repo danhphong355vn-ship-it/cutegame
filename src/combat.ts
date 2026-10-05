@@ -6,8 +6,8 @@ export interface CombatHit { amount: number; critical: boolean; stun: number; li
 export interface CombatEffect extends CombatPoint { kind: 'arc'|'ring'|'impact'|'trail'|'beam'|'cast'|'toss'; color: string; radius: number; facing?: number; duration?: number; /** Arc width (rad) of a swing; beam width (m). */ arc?: number; width?: number;
   /** How the view dresses it (skill-fx.ts): 'eyes' twin eye lasers, 'burn' a laser scorch, 'shock' an electric burst. Same hit either way. */
   look?: EffectLook }
-export type EffectLook='eyes'|'burn'|'shock';
-export const EFFECT_LOOKS:readonly EffectLook[]=['eyes','burn','shock'];
+export type EffectLook='eyes'|'burn'|'shock'|'flower'|'hero'|'heroDive'|'roots';
+export const EFFECT_LOOKS:readonly EffectLook[]=['eyes','burn','shock','flower','hero','heroDive','roots'];
 /** The laser gaze (dz_superhero slot 2): one sweep of `arc` rad in `time` s, a `length` m line `width` m wide; a creature is hit again after `rehit` s. */
 export const GAZE={length:13,width:1,arc:1.8,time:1.2,step:.025,rehit:.25} as const;
 /** Shots that crackle with electricity and burst with a shock: the battle robot's bolts, its turret and missiles, the robot pet. */
@@ -161,9 +161,9 @@ export class CombatSimulation {
     const map:Record<string,string[]>={dz_superhero:['flight','dive','sweep','boulder'],dz_mage:['fireball','teleport','sheep','blackhole'],dz_knight:['shield','charge','taunt','holy'],dz_mecha:['tank','turret','missiles','energyshield'],dz_ninja:['clones','stealth','backstab','smoke'],dz_dino:['devour','tail','roar','giant'],dz_pirate:['cannon','hook','parrot','cannons'],dz_vampire:['drain','bats','batcircle','bloodnova'],dz_snowman:['snowball','decoy','icefloor','iceage'],dz_fairy:['heal','hover','charm','roots']};
     const effect=map[id]?.[index];if(!effect)return false;
     const p={...this.host.position()},angle=this.aim(),d=direction(angle);
-    if(effect==='flight'){this.statuses.flight=this.statuses.flight>0?0:12;this.emit('ring',p,2,'#ffffff');}
-    else if(effect==='hover'){this.statuses.flight=8;this.emit('ring',p,2,'#ffe1ff');}
-    else if(effect==='dive'){const mult=this.statuses.flight>0?4:2;this.statuses.flight=0;this.host.move(d.x*4,d.z*4);this.later(.18,()=>this.area(this.host.position(),5,mult,1,3,'#b5cbff'));}
+    if(effect==='flight'){this.statuses.flight=this.statuses.flight>0?0:12;this.emit('ring',p,2,'#9fd7ff',angle,'hero');}
+    else if(effect==='hover'){this.statuses.flight=8;this.emit('ring',p,2,'#ffe1ff',angle,'flower');}
+    else if(effect==='dive'){const mult=this.statuses.flight>0?4:2;this.statuses.flight=0;this.emit('cast',p,1.4,'#a9dbff',angle,'hero');this.host.move(d.x*4,d.z*4);this.later(.18,()=>this.area(this.host.position(),5,mult,1,3,'#b5cbff',1.2,'heroDive'));}
     else if(effect==='sweep'){
       // Laser gaze: twin eye beams sweep the front. Each step the line drawn (look 'eyes', skill-fx.ts) and the line hit
       // are the same: from the explorer along `beamAngle`, GAZE.length long and GAZE.width wide; a hit leaves a scorch ('burn').
@@ -181,7 +181,7 @@ export class CombatSimulation {
       });}
     }
     else if(effect==='shield'||effect==='energyshield'){this.statuses.shield=4;if(effect==='energyshield')this.host.heal?.(.2);this.emit('ring',p,2.5,'#a1fbdf');}
-    else if(effect==='heal'){for(let i=0;i<16;i++)this.later(i*.5,()=>{this.emit('ring',p,4,'#bbffb9');if(Math.hypot(this.host.position().x-p.x,this.host.position().z-p.z)<4)this.host.heal?.(.03);});}
+    else if(effect==='heal'){for(let i=0;i<16;i++)this.later(i*.5,()=>{this.emit('ring',p,4,'#ffbde2',angle,'flower');if(Math.hypot(this.host.position().x-p.x,this.host.position().z-p.z)<4)this.host.heal?.(.03);});}
     else if(effect==='stealth'||effect==='bats'){this.statuses.stealth=effect==='bats'?0:5;this.statuses.bats=effect==='bats'?2.5:0;if(effect==='bats')this.statuses.shield=2.5;this.emit('ring',p,2,'#c0ace8');}
     else if(effect==='teleport'){this.host.move(d.x*8,d.z*8);this.emit('impact',this.host.position(),2,'#c6adff');}
     else if(effect==='backstab'){const t=this.nearest(12);if(!t)return false;this.host.move(t.x-p.x-d.x*1.2,t.z-p.z-d.z*1.2);this.damage(t,3,1);this.emit('arc',t,2,'#f9f0ce');}
@@ -196,12 +196,12 @@ export class CombatSimulation {
     else if(effect==='roar'||effect==='smoke'||effect==='taunt'||effect==='sheep'||effect==='charm'){
       const t=this.nearest(12),center=(effect==='sheep'||effect==='charm')?(t??p):p,radius=effect==='sheep'?3:effect==='charm'?1:effect==='roar'?9:effect==='taunt'?12:5;
       for(const e of this.host.targets())if(e.hp>0&&Math.hypot(e.x-center.x,e.z-center.z)<radius+e.radius)this.host.status?.(e,effect==='roar'?'fear':effect==='smoke'?'blind':effect==='taunt'?'taunt':effect==='sheep'?'sheep':'charm',effect==='charm'?8:effect==='sheep'||effect==='taunt'?6:4);
-      if(effect==='taunt')this.statuses.armor=6;if(effect==='smoke')this.statuses.stealth=4;this.emit('ring',center,radius,'#ccbae8');
+      if(effect==='taunt')this.statuses.armor=6;if(effect==='smoke')this.statuses.stealth=4;this.emit('ring',center,radius,effect==='charm'?'#ff9ec8':'#ccbae8',angle,effect==='charm'?'flower':undefined);
     }
-    else if(effect==='roots'){this.area(p,6,1,4);for(let i=1;i<9;i++)this.later(i*.5,()=>{this.area(p,6,.3,.5,0,'#aad487');this.host.heal?.(.01);});}
+    else if(effect==='roots'){this.area(p,6,1,4,0,'#92ca75',1.2,'roots');for(let i=1;i<9;i++)this.later(i*.5,()=>{this.area(p,6,.3,.5,0,'#aad487',1.2,'roots');this.host.heal?.(.01);});}
     else if(effect==='drain'){const t=this.nearest(11);if(!t)return false;for(let i=0;i<7;i++)this.later(i*.35,()=>{if(t.hp>0){this.damage(t,.7);this.host.heal?.(.035);this.emit('beam',this.host.position(),Math.hypot(t.x-this.host.position().x,t.z-this.host.position().z),'#ea7a9c',Math.atan2(t.x-this.host.position().x,t.z-this.host.position().z));}});}
     else if(effect==='bloodnova'){this.statuses.lifesteal=6;const targets=this.host.targets().filter(t=>t.hp>0&&Math.hypot(t.x-p.x,t.z-p.z)<7);for(let i=0;i<12;i++)this.later(i*.5,()=>{for(const t of targets)this.damage(t,.3);this.emit('ring',p,7,'#cf6290');});}
-    else if(effect==='fireball'||effect==='boulder'){this.emit('cast',p,2,effect==='fireball'?'#ffad6b':'#ad9d89');this.later(.8,()=>this.shoot(effect==='fireball'?'fireball':'boulder',angle,3,14,{radius:1,explosion:4,stun:2}));}
+    else if(effect==='fireball'||effect==='boulder'){this.emit('cast',p,2,effect==='fireball'?'#ffad6b':'#ad9d89',angle,effect==='boulder'?'hero':undefined);this.later(.8,()=>this.shoot(effect==='fireball'?'fireball':'boulder',angle,3,14,{radius:1,explosion:4,stun:2}));}
     else if(effect==='snowball'){this.shoot('snowball',angle,3,21,{radius:1.5,speed:9,pierce:true,stun:2});}
     else if(effect==='blackhole'){const target={...(this.nearest(12)??p)};for(let i=0;i<10;i++)this.later(i*.3,()=>{for(const t of this.host.targets())if(Math.hypot(t.x-target.x,t.z-target.z)<7)this.host.moveTarget?.(t,target.x+(t.x-target.x)*.65,target.z+(t.z-target.z)*.65);this.area(target,5,.4,1,0,'#9c8ee5');});this.later(3,()=>this.area(target,5,3,1,2,'#bc97ed'));}
     else if(effect==='holy'){const target={...(this.nearest(14)??p)};this.emit('cast',target,3,'#fff1b0');this.later(.8,()=>this.area(target,3.5,4,1,2.5,'#fff1b0'));}
@@ -264,10 +264,10 @@ this.petCooldown=Math.max(.1,pet.cd);this.emit('cast',pet,.35,colorFor(pet.shot?
       else if(distance<target.radius+1.6){this.damage(target,ally.kind==='bat'?.35:.6,.1);ally.cooldown=.7;this.emit('arc',ally,1,'#c6b2ee',angle);if(ally.kind==='bat')this.host.heal?.(.01);}
     }
     for(let i=this.projectiles.length-1;i>=0;i--){const shot=this.projectiles[i],from={x:shot.x,z:shot.z},step=Math.min(shot.speed*dt,shot.remaining),to={x:shot.x+shot.direction.x*step,z:shot.z+shot.direction.z*step};
-      if(this.host.clearShot&&!this.host.clearShot(from,to)){this.emit('impact',from,.4,shot.color);this.projectiles.splice(i,1);continue;}
+      if(this.host.clearShot&&!this.host.clearShot(from,to)){this.emit('impact',from,.4,shot.color,this.host.facing(),shot.kind==='boulder'?'hero':undefined);this.projectiles.splice(i,1);continue;}
       shot.x=to.x;shot.z=to.z;shot.remaining-=step;let consumed=false;
       const targets=this.host.targets().filter(t=>t.hp>0&&!shot.hit.has(t.id)&&distanceToSegment(t,from,to)<=t.radius+shot.radius).sort((a,b)=>Math.hypot(a.x-from.x,a.z-from.z)-Math.hypot(b.x-from.x,b.z-from.z));
-      this.helperShot=!!shot.helper;for(const target of targets){shot.hit.add(target.id);this.damage(target,shot.multiplier,shot.stun,shot.lift,1);const look=ELECTRIC_SHOTS.has(shot.kind)?'shock' as const:undefined;this.emit('impact',target,shot.radius+.3,shot.color,this.host.facing(),look);if(shot.explosion)this.area(target,shot.explosion,shot.multiplier*.6,shot.stun,0,shot.color,1.2,look);if(!shot.pierce){consumed=true;break;}}
+      this.helperShot=!!shot.helper;for(const target of targets){shot.hit.add(target.id);this.damage(target,shot.multiplier,shot.stun,shot.lift,1);const look=ELECTRIC_SHOTS.has(shot.kind)?'shock' as const:shot.kind==='boulder'?'hero' as const:undefined;this.emit('impact',target,shot.radius+.3,shot.color,this.host.facing(),look);if(shot.explosion)this.area(target,shot.explosion,shot.multiplier*.6,shot.stun,0,shot.color,1.2,look);if(!shot.pierce){consumed=true;break;}}
       this.helperShot=false;if(consumed||shot.remaining<=0)this.projectiles.splice(i,1);
     }
   }
