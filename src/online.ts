@@ -236,6 +236,46 @@ export function initOnline(game:GameBridge) {
   duelTopBar.style.display = 'none';
   document.body?.append?.(duelTopBar);
 
+  const playerNametagsLayer = el('div', 'player-nametags-layer');
+  document.body?.append?.(playerNametagsLayer);
+  const overheadNametags = new Map<string, { root: HTMLElement; badge: HTMLElement; hpBar: HTMLElement; hpFill: HTMLElement }>();
+
+  let isDuelActive = false;
+  let activeDuelOpponent: { id: string; name: string } | null = null;
+  let duelSelfHp = 100;
+  let duelSelfMaxHp = 100;
+  let duelOppHp = 100;
+  let duelOppMaxHp = 100;
+  let duelPot = 0;
+
+  function updateDuelTopBarUi() {
+    const selfName = account?.name || game.getState().name || 'Bạn';
+    const oppName = activeDuelOpponent?.name || 'Đối thủ';
+    const selfPct = Math.max(0, Math.min(100, Math.round((duelSelfHp / Math.max(1, duelSelfMaxHp)) * 100)));
+    const oppPct = Math.max(0, Math.min(100, Math.round((duelOppHp / Math.max(1, duelOppMaxHp)) * 100)));
+
+    duelTopBar.innerHTML = `
+      <div class="duel-fighter self">
+        <span class="duel-fighter-name">⚔️ ${selfName}</span>
+        <div class="duel-hp-bar">
+          <div class="duel-hp-fill self" style="width:${selfPct}%"></div>
+          <span class="duel-hp-text">${duelSelfHp} / ${duelSelfMaxHp}</span>
+        </div>
+      </div>
+      <div class="duel-center-info">
+        <div class="duel-vs-badge">VS</div>
+        <div class="duel-topbar-pot">🪙 ${duelPot.toLocaleString()} Vàng</div>
+      </div>
+      <div class="duel-fighter opp">
+        <span class="duel-fighter-name">⚔️ ${oppName}</span>
+        <div class="duel-hp-bar">
+          <div class="duel-hp-fill opp" style="width:${oppPct}%"></div>
+          <span class="duel-hp-text">${duelOppHp} / ${duelOppMaxHp}</span>
+        </div>
+      </div>
+    `;
+  }
+
   const duelResultModal = el('div', 'duel-result-modal');
   duelResultModal.style.display = 'none';
   document.body?.append?.(duelResultModal);
@@ -332,6 +372,9 @@ export function initOnline(game:GameBridge) {
   }
 
   function openPlayer(id:string){
+    if(world().arenaActive||isDuelActive)return;
+    const isTargetDueled=arenaPlayers.some(p=>p.id===id&&p.isDuel);
+    if(isTargetDueled){announce('Người chơi này đang trong trận quyết đấu 1v1!');return;}
     const player=players.get(id);if(!player||id===account?.id)return;
     playerCardDialog.replaceChildren();
 
@@ -432,7 +475,10 @@ export function initOnline(game:GameBridge) {
     playerCardDialog.append(header, body);
     if (!playerCardDialog.open) playerCardDialog.showModal();
   }
-  world().onRemotePlayerClick=openPlayer;
+  world().onRemotePlayerClick=(id)=>{
+    if(world().arenaActive||isDuelActive)return;
+    openPlayer(id);
+  };
   document.addEventListener('keydown',event=>{
     if(gameplayKey(event)!=='Enter'||event.repeat||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]'))return;
     if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();captureChatDraft();tab='world';render();if(!dialog.open)dialog.showModal();content.querySelector<HTMLInputElement>('.social-chat-input')?.focus();
@@ -441,6 +487,7 @@ export function initOnline(game:GameBridge) {
   function expireSession(){
     if(!account)return;sessionEpoch++;stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);
     clearChat();const previous=socket;socket=null;previous?.close();account=null;host=null;party=null;visiting=null;players.clear();rejectActions('Your session ended. Pending actions remain on this device.');
+    for(const tag of overheadNametags.values())tag.root.remove(); overheadNametags.clear();
     authority(null);world().clearRemotePlayers();game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);const previousOffline=offline||game.getOfflineState();if(previousOffline)game.applyState(previousOffline);offline=null;
     status='Play together';setSaveStatus('● Offline adventure restored');refreshButton();render();announce('Your online session ended. Sign in again to continue; pending online progress is kept on this device.');
   }
@@ -525,7 +572,9 @@ export function initOnline(game:GameBridge) {
     }, 850);
   }
 
-  function showDuelResult(result: { won: boolean; pot: number; bet: number; opponent?: string; winner?: string; loser?: string; forfeit?: boolean; reason?: string }) {
+  function showDuelResult(result: { won: boolean; pot: number; bet: number; opponent?: string; winner?: string; loser?: string; forfeit?: boolean; reason?: string; winnerRemainingHp?: number; restoredHp?: number; maxHp?: number }) {
+    isDuelActive = false;
+    activeDuelOpponent = null;
     duelTopBar.style.display = 'none';
     document.body.classList.remove('has-active-duel');
     duelResultModal.style.display = 'flex';
@@ -541,8 +590,10 @@ export function initOnline(game:GameBridge) {
         }, i * 200);
       }
       const curState = game.getState();
+      const heroMaxHp = maxHp(curState);
+      const restored = result.restoredHp ?? Math.min(heroMaxHp, (result.winnerRemainingHp ?? curState.hp) + Math.round(heroMaxHp * 0.3));
       curState.energy = (curState.energy || 0) + (result.pot || 0);
-      curState.hp = maxHp(curState);
+      curState.hp = restored;
       game.applyState(curState);
 
       let winReason = `Bạn đã hạ gục anh hùng ${oppName}!`;
@@ -558,11 +609,14 @@ export function initOnline(game:GameBridge) {
         <h2 class="duel-result-title win">CHIẾN THẮNG TUYỆT ĐỐI!</h2>
         <p class="duel-result-sub">${winReason}</p>
         <div class="duel-reward-box">🏆 Nhận Thưởng: +${(result.pot || 0).toLocaleString()} Vàng</div>
+        <div class="duel-safe-box" style="margin-top:8px;">💖 Hồi phục sinh lực: Máu còn lại + 30% (${restored}/${heroMaxHp} HP)</div>
         <button class="btn-result-close">TIẾP TỤC</button>
       `;
     } else {
       const curState = game.getState();
-      curState.hp = maxHp(curState);
+      const heroMaxHp = maxHp(curState);
+      const restored = result.restoredHp ?? Math.round(heroMaxHp * 0.3);
+      curState.hp = restored;
       game.applyState(curState);
 
       let loseReason = `Bạn đã bị ${oppName} đánh bại trong trận quyết đấu.`;
@@ -577,7 +631,7 @@ export function initOnline(game:GameBridge) {
         <div class="duel-result-icon">💀</div>
         <h2 class="duel-result-title loss">THẤT BẠI TRONG QUYẾT ĐẤU!</h2>
         <p class="duel-result-sub">${loseReason}</p>
-        <div class="duel-safe-box">🛡️ Mất ${result.bet ? result.bet.toLocaleString() : 0} Vàng tiền cược.<br>Toàn bộ trang bị và đồ trong ba lô được BẢO TOÀN 100%! Đã hồi phục đầy máu.</div>
+        <div class="duel-safe-box">🛡️ Mất ${result.bet ? result.bet.toLocaleString() : 0} Vàng tiền cược.<br>Toàn bộ trang bị và ba lô được BẢO TOÀN 100%! Đã hồi phục lại 30% máu (${restored}/${heroMaxHp} HP).</div>
         <button class="btn-result-close">ĐỒNG Ý</button>
       `;
     }
@@ -673,10 +727,17 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='arenaJoined'){
         const current=world();current.arenaActive=true;
         if(message.isDuel){
+          isDuelActive=true;
+          activeDuelOpponent={id:message.opponentId,name:message.opponentName||'Đối thủ'};
+          duelSelfHp=message.hp;duelSelfMaxHp=message.maxHp;
+          duelOppHp=message.maxHp;duelOppMaxHp=message.maxHp;
+          duelPot=message.pot||0;
+          if(playerCardDialog.open)playerCardDialog.close();
+          duelInviteBanner.style.display='none';
           document.body.classList.add('has-active-duel');
           showDuelCountdown(()=>{
+            updateDuelTopBarUi();
             duelTopBar.style.display='flex';
-            duelTopBar.innerHTML=`⚔️ <span>ĐẤU VỚI: <b>${message.opponentName||'Đối thủ'}</b></span> <span class="duel-topbar-pot">🏆 Quỹ: ${(message.pot||0).toLocaleString()} Vàng</span>`;
           });
         }else{
           current.position.x=message.spawnX;current.position.z=message.spawnZ;current.destination=null;current.route=[];
@@ -686,14 +747,38 @@ export function initOnline(game:GameBridge) {
       }
       else if(message.type==='arenaLeft'){
         world().arenaActive=false;world().arenaStunUntil=0;world().arenaTargets=[];
+        isDuelActive=false;activeDuelOpponent=null;
         duelTopBar.style.display='none';
         document.body.classList.remove('has-active-duel');
         refreshActivities();
       }
       else if(message.type==='arenaControl'){world().arenaStunUntil=Date.now()+Math.max(0,Math.min(2000,message.duration||0));}
       else if(message.type==='arenaPosition'){if(world().arenaActive){world().position.x=message.x;world().position.z=message.z;}}
-      else if(message.type==='arena'){arenaPlayers=message.players||[];refreshActivities();}
-      else if(message.type==='arenaHit'){world().hurtFeedback(message.damage);}
+      else if(message.type==='arena'){
+        arenaPlayers=message.players||[];
+        if(isDuelActive&&account){
+          const selfP=arenaPlayers.find(p=>p.id===account?.id);
+          const oppP=arenaPlayers.find(p=>p.id===activeDuelOpponent?.id);
+          if(selfP){duelSelfHp=selfP.hp;duelSelfMaxHp=selfP.maxHp;}
+          if(oppP){duelOppHp=oppP.hp;duelOppMaxHp=oppP.maxHp;}
+          updateDuelTopBarUi();
+        }
+        refreshActivities();
+      }
+      else if(message.type==='arenaHit'){
+        duelSelfHp=message.hp;duelSelfMaxHp=message.maxHp;
+        updateDuelTopBarUi();
+        const s=game.getState();s.hp=message.hp;game.applyState(s);
+        world().hurtFeedback(message.damage);
+      }
+      else if(message.type==='arenaHitDealt'){
+        duelOppHp=message.hp;duelOppMaxHp=message.maxHp;
+        updateDuelTopBarUi();
+        const oppRemote=world().remotePlayers?.get(message.targetId);
+        if(oppRemote){
+          world().burst?.(oppRemote.mesh.position.x,oppRemote.mesh.position.z,'#ef4444',8);
+        }
+      }
       else if(message.type==='arenaResult'){
         if(message.isDuel){
           showDuelResult(message);
@@ -772,6 +857,7 @@ export function initOnline(game:GameBridge) {
     sessionEpoch++;
     try{localStorage.removeItem(REMEMBER_AUTH_KEY);}catch{}
     clearChat();stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);socket?.close();socket=null;account=null;host=null;party=null;visiting=null;players.clear();authority(null);world().clearRemotePlayers();
+    for(const tag of overheadNametags.values())tag.root.remove(); overheadNametags.clear();
     game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);const state=offline||game.getOfflineState();if(state)game.applyState(state);setSaveStatus('● Saved on this device');status='Play together';refreshButton();render();announce('Your offline adventure is restored.');
   }
   async function reconnectOnline(){
@@ -844,6 +930,108 @@ export function initOnline(game:GameBridge) {
     }
     activitiesClock+=dt;if(activitiesClock>=.1){activitiesClock=0;refreshActivities();}
     if(arenaView&&game.getPresence().planet===ARENA.planet)arenaView.update(dt,!!world().arenaActive,world());
+
+    // Update Overhead Name Tags for Local & Remote Players
+    const activeIds = new Set<string>();
+    const w = world();
+    
+    // 1. Local Player Name Tag
+    if (account || game.getState()) {
+      const localId = account?.id || 'local';
+      activeIds.add(localId);
+      let tag = overheadNametags.get(localId);
+      if (!tag) {
+        const root = el('div', 'player-nametag');
+        const badge = el('div', 'player-nametag-badge');
+        const hpBar = el('div', 'player-nametag-hp');
+        const hpFill = el('div', 'player-nametag-hp-fill');
+        hpBar.append(hpFill);
+        root.append(badge, hpBar);
+        playerNametagsLayer.append(root);
+        tag = { root, badge, hpBar, hpFill };
+        overheadNametags.set(localId, tag);
+      }
+      
+      const localPos = w.position;
+      const pt = localPos ? w.screen?.(localPos.x, (localPos.y || 0) + 2.1, localPos.z) : null;
+      if (pt?.front && pt?.visible) {
+        tag.root.style.display = 'flex';
+        tag.root.style.left = `${pt.x}px`;
+        tag.root.style.top = `${pt.y}px`;
+        const myName = account?.name || game.getState().name || 'Nhà thám hiểm';
+        const myLevel = game.getState().level || 1;
+        const dueling = isDuelActive || (w.arenaActive && !!activeDuelOpponent);
+        if (dueling) {
+          tag.root.classList.add('dueling');
+          tag.badge.textContent = `⚔️ ${myName}`;
+          const pct = Math.max(0, Math.min(100, Math.round((duelSelfHp / Math.max(1, duelSelfMaxHp)) * 100)));
+          tag.hpFill.style.width = `${pct}%`;
+        } else {
+          tag.root.classList.remove('dueling');
+          tag.badge.textContent = `🧙 ${myName} · Lv.${myLevel}`;
+        }
+      } else {
+        tag.root.style.display = 'none';
+      }
+    }
+
+    // 2. Remote Players Name Tags
+    const remotes = (w.remotePlayers instanceof Map ? w.remotePlayers : []);
+    for (const [id, remote] of remotes) {
+      if (!remote?.mesh?.visible) continue;
+      activeIds.add(id);
+      let tag = overheadNametags.get(id);
+      if (!tag) {
+        const root = el('div', 'player-nametag');
+        const badge = el('div', 'player-nametag-badge');
+        const hpBar = el('div', 'player-nametag-hp');
+        const hpFill = el('div', 'player-nametag-hp-fill');
+        hpBar.append(hpFill);
+        root.append(badge, hpBar);
+        playerNametagsLayer.append(root);
+        tag = { root, badge, hpBar, hpFill };
+        overheadNametags.set(id, tag);
+      }
+
+      const rx = remote.mesh.position?.x ?? remote.pose?.x ?? 0;
+      const ry = remote.mesh.position?.y ?? remote.pose?.y ?? 0;
+      const rz = remote.mesh.position?.z ?? remote.pose?.z ?? 0;
+      const pt = w.screen?.(rx, ry + 2.1, rz);
+      if (pt?.front && pt?.visible) {
+        tag.root.style.display = 'flex';
+        tag.root.style.left = `${pt.x}px`;
+        tag.root.style.top = `${pt.y}px`;
+        const oppData = players.get(id);
+        const oppName = oppData?.name || remote.pose.name || 'Người chơi';
+        const oppLevel = oppData?.level || remote.pose.level || 1;
+        const isThisOppDueled = (isDuelActive && id === activeDuelOpponent?.id) || arenaPlayers.some(p => p.id === id && p.isDuel);
+        if (isThisOppDueled) {
+          tag.root.classList.add('dueling');
+          tag.badge.textContent = `⚔️ ${oppName}`;
+          let curHp = duelOppHp, maxH = duelOppMaxHp;
+          if (id !== activeDuelOpponent?.id) {
+            const arenaP = arenaPlayers.find(p => p.id === id);
+            if (arenaP) { curHp = arenaP.hp; maxH = arenaP.maxHp; }
+          }
+          const pct = Math.max(0, Math.min(100, Math.round((curHp / Math.max(1, maxH)) * 100)));
+          tag.hpFill.style.width = `${pct}%`;
+        } else {
+          tag.root.classList.remove('dueling');
+          tag.badge.textContent = `🧙 ${oppName} · Lv.${oppLevel}`;
+        }
+      } else {
+        tag.root.style.display = 'none';
+      }
+    }
+
+    // Clean up nametags of players no longer present
+    for (const [id, tag] of overheadNametags) {
+      if (!activeIds.has(id)) {
+        tag.root.remove();
+        overheadNametags.delete(id);
+      }
+    }
+
     if(!account||socket?.readyState!==WebSocket.OPEN)return;
     if(Date.now() - lastPingAt > 2500){
       lastPingAt = Date.now();

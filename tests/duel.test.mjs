@@ -131,10 +131,13 @@ test('1v1 Wager Duel: challenge, bet deduction, colosseum teleport, 1v1 lock, an
   assert.equal(aResult.won, true);
   assert.equal(aResult.isDuel, true);
   assert.equal(aResult.pot, 1000);
+  assert.ok(aResult.restoredHp > 0);
+  assert.ok(aResult.winnerRemainingHp > 0);
 
   assert.equal(bResult.won, false);
   assert.equal(bResult.isDuel, true);
   assert.equal(bResult.bet, 500);
+  assert.ok(bResult.restoredHp > 0);
 
   // 9. Alice received pot (500 remaining + 1000 pot = 1500)
   const finalAlice = await store.get(host.id);

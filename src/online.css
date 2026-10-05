@@ -568,7 +568,7 @@ body.has-active-duel .hud-perf-badge {
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* Top Duel Bar HUD */
+/* Top Duel Bar HUD with Dual Health Bars */
 .duel-topbar {
   position: fixed;
   top: 14px;
@@ -577,26 +577,191 @@ body.has-active-duel .hud-perf-badge {
   z-index: 120;
   display: flex;
   align-items: center;
-  gap: 16px;
-  background: rgba(18, 14, 28, 0.9);
-  backdrop-filter: blur(10px);
+  justify-content: space-between;
+  gap: 14px;
+  background: rgba(18, 14, 28, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 2px solid #ffd700;
   border-radius: 999px;
-  padding: 6px 20px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 215, 0, 0.3);
-  font-family: 'Nunito Variable', -apple-system, sans-serif;
+  padding: 6px 18px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(255, 215, 0, 0.35);
+  font-family: 'Nunito Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #fff;
   font-weight: 800;
   font-size: 13px;
   white-space: nowrap;
+  max-width: min(640px, calc(100vw - 20px));
+}
+.duel-fighter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.duel-fighter.self {
+  flex-direction: row;
+}
+.duel-fighter.opp {
+  flex-direction: row-reverse;
+}
+.duel-fighter-name {
+  font-size: 13px;
+  font-weight: 900;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+.duel-fighter.self .duel-fighter-name {
+  color: #86efac;
+}
+.duel-fighter.opp .duel-fighter-name {
+  color: #fca5a5;
+}
+.duel-hp-bar {
+  position: relative;
+  width: 110px;
+  height: 14px;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+.duel-hp-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.duel-hp-fill.self {
+  background: linear-gradient(90deg, #10b981, #22c55e);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+.duel-hp-fill.opp {
+  background: linear-gradient(90deg, #f97316, #ef4444);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  float: right;
+}
+.duel-hp-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 900;
+  color: #ffffff;
+  text-shadow: 0 1px 2px #000;
+  letter-spacing: 0.5px;
+}
+.duel-center-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.duel-vs-badge {
+  font-size: 13px;
+  font-weight: 1000;
+  color: #ffd700;
+  letter-spacing: 1px;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.9), 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 .duel-topbar-pot {
   background: linear-gradient(135deg, #f59e0b, #d97706);
-  padding: 3px 10px;
+  padding: 1px 8px;
   border-radius: 999px;
   color: #fff;
   font-weight: 900;
-  font-size: 12px;
+  font-size: 11px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+@media (max-width: 600px) {
+  .duel-topbar {
+    padding: 5px 12px;
+    gap: 8px;
+  }
+  .duel-fighter-name {
+    max-width: 70px;
+    font-size: 11px;
+  }
+  .duel-hp-bar {
+    width: 75px;
+    height: 12px;
+  }
+  .duel-hp-text {
+    font-size: 8px;
+  }
+}
+
+/* Overhead Player Nametags Layer */
+.player-nametags-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+  overflow: hidden;
+}
+.player-nametag {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  user-select: none;
+  will-change: transform, left, top;
+  transition: opacity 0.15s ease-out;
+}
+.player-nametag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #f8fafc;
+  font-family: 'Nunito Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+.player-nametag.dueling .player-nametag-badge {
+  background: rgba(185, 28, 28, 0.92);
+  border: 1.5px solid #ef4444;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.85), 0 2px 8px rgba(0, 0, 0, 0.6);
+  animation: duelPulse 0.9s ease-in-out infinite alternate;
+  font-weight: 900;
+}
+@keyframes duelPulse {
+  0% { transform: scale(1); box-shadow: 0 0 8px rgba(239, 68, 68, 0.7); }
+  100% { transform: scale(1.09); box-shadow: 0 0 20px rgba(239, 68, 68, 1); }
+}
+.player-nametag-hp {
+  display: none;
+  width: 58px;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.75);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.player-nametag.dueling .player-nametag-hp {
+  display: block;
+}
+.player-nametag-hp-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #ef4444, #f97316);
+  transition: width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 /* Duel Result Modal */

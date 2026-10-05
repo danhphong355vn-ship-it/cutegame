@@ -1316,9 +1316,10 @@ function endTryOn(){if(!tryingOn&&!world.tryOnGear&&!world.tryOnLook)return;tryi
 function basicAttack(e?:Enemy){
   if(!started||uiBlocked()||visiting||combatTimers.attackCooldown>0)return;
   if(world.arenaActive&&Date.now()<world.arenaStunUntil)return;
-  if(world.arenaActive)e=undefined;
+  const arenaOpp=world.arenaActive?(world.arenaTargets.find(t=>Math.hypot(t.x-world.position.x,t.z-world.position.z)<=6)||world.arenaTargets[0]):undefined;
+  if(world.arenaActive)e=arenaOpp as any;
   prepareCombatWeapon();
-  if(combat.basic(e)){const stats=M.activeStats(state),weapon=M.weaponStats(state);combatTimers.attackCooldown=Math.max(.12,(weapon.cd||.5)/Math.max(.2,1+stats.haste));const volt=weapon.shot==='volt';world.playerAttack(weapon.kind,volt?'#bfefff':undefined);tone(volt?'zap':weapon.kind==='gun'?'shoot':weapon.kind==='sword'?'swing':'punch');emitAction({kind:'basic',targetId:e?.id});}
+  if(combat.basic(e)){const stats=M.activeStats(state),weapon=M.weaponStats(state);combatTimers.attackCooldown=Math.max(.12,(weapon.cd||.5)/Math.max(.2,1+stats.haste));const volt=weapon.shot==='volt';world.playerAttack(weapon.kind,volt?'#bfefff':undefined);tone(volt?'zap':weapon.kind==='gun'?'shoot':weapon.kind==='sword'?'swing':'punch');emitAction({kind:'basic',targetId:world.arenaActive?arenaOpp?.id:e?.id});}
 }
 world.onAttackEnemy=basicAttack;
 /** The tooltip and long-press tip of skill slot i, with the numbers at the current level (skill-info.ts). */

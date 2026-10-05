@@ -20,6 +20,13 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
       activeDuels.delete(duel.opponentId);
       const oppPeer=peers.get(duel.opponentId);
       if(oppPeer){
+        const oppMember=members.get(duel.opponentId);
+        const peerMember=members.get(peer.account.id);
+        const oppMaxHp=oppMember?oppMember.maxHp:Game.maxHp(oppPeer.account.profile);
+        const oppRemainingHp=oppMember?oppMember.hp:oppMaxHp;
+        const oppRestoredHp=Math.min(oppMaxHp,oppRemainingHp+Math.round(oppMaxHp*.3));
+        const peerMaxHp=peerMember?peerMember.maxHp:Game.maxHp(peer.account.profile);
+        const peerRestoredHp=Math.max(1,Math.round(peerMaxHp*.3));
         commit(duel.opponentId,'arenaWin',[peer.account.id],records=>{
           const a=records.get(duel.opponentId),b=records.get(peer.account.id);
           if(a){
@@ -31,8 +38,8 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
           }
           return {winner:duel.opponentId,loser:peer.account.id};
         }).then(()=>{
-          send(oppPeer.socket,{type:'arenaResult',won:true,isDuel:true,forfeit:true,reason,bet:duel.bet,pot:duel.pot,loser:peer.account.profile.name,opponent:peer.account.profile.name});
-          send(peer.socket,{type:'arenaResult',won:false,isDuel:true,forfeit:true,reason,bet:duel.bet,pot:duel.pot,winner:oppPeer.account.profile.name,opponent:oppPeer.account.profile.name});
+          send(oppPeer.socket,{type:'arenaResult',won:true,isDuel:true,forfeit:true,reason,bet:duel.bet,pot:duel.pot,loser:peer.account.profile.name,opponent:peer.account.profile.name,winnerRemainingHp:oppRemainingHp,restoredHp:oppRestoredHp,maxHp:oppMaxHp});
+          send(peer.socket,{type:'arenaResult',won:false,isDuel:true,forfeit:true,reason,bet:duel.bet,pot:duel.pot,winner:oppPeer.account.profile.name,opponent:oppPeer.account.profile.name,restoredHp:peerRestoredHp,maxHp:peerMaxHp});
           members.delete(oppPeer.account.id);
           members.delete(peer.account.id);
           onLeave(oppPeer);
@@ -80,7 +87,7 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
       const oppPeer=oppMember.peer;
       if(!oppPeer||!oppPeer.active||oppPeer.visit||oppPeer.planet!==duel.planet||oppPeer.room!==peer.room)return [];
       if(inHouse(oppPeer.planet,oppPeer.pose))return [];
-      return [{id:`arena:${oppPeer.account.id}`,x:oppPeer.pose.x,z:oppPeer.pose.z,hp:oppMember.hp,maxHp:oppMember.maxHp,radius:.65,boss:false}];
+      return [{id:`arena:${oppPeer.account.id}`,x:oppPeer.pose.x,z:oppPeer.pose.z,hp:oppMember.hp,maxHp:oppMember.maxHp,radius:1.2,boss:false}];
     }
     if(!eligible(peer))return [];
     return [...members.values()].filter(m=>m.peer!==peer&&!activeDuels.has(m.peer.account.id)&&!m.pending&&m.protectedUntil<=now()&&eligible(m.peer)&&m.peer.room===peer.room).map(m=>({id:`arena:${m.peer.account.id}`,x:m.peer.pose.x,z:m.peer.pose.z,hp:m.hp,maxHp:m.maxHp,radius:.65,boss:false}));
@@ -90,11 +97,19 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
     if(!canAct(peer)||!targets(peer).some(t=>t.id===target.id)||!victim||immune(victim.peer))return 0;
     const damage=Math.min(victim.hp,Math.max(1,Math.round(impact.amount*60/(Game.defense(victim.peer.account.profile)+60))));victim.hp-=damage;
     if(victim.hp>0&&impact.stun>0)control(peer,target,'stun',impact.stun);
-    send(victim.peer.socket,{type:'arenaHit',damage,hp:victim.hp,maxHp:victim.maxHp});publish(rooms.get(peer.room));
+    send(victim.peer.socket,{type:'arenaHit',damage,hp:victim.hp,maxHp:victim.maxHp});
+    send(peer.socket,{type:'arenaHitDealt',damage,targetId:id,hp:victim.hp,maxHp:victim.maxHp});
+    publish(rooms.get(peer.room));
     if(victim.hp<=0){
       victim.pending=true;
       const loser=victim.peer,winner=peer.account.id;
       const duel=activeDuels.get(winner);
+      const winnerMember=members.get(winner);
+      const winnerRemainingHp=winnerMember?winnerMember.hp:Game.maxHp(peer.account.profile);
+      const winnerMaxHp=winnerMember?winnerMember.maxHp:Game.maxHp(peer.account.profile);
+      const loserMaxHp=victim.maxHp;
+      const loserRestoredHp=Math.max(1,Math.round(loserMaxHp*.3));
+      const winnerRestoredHp=Math.min(winnerMaxHp,winnerRemainingHp+Math.round(winnerMaxHp*.3));
       if(duel){activeDuels.delete(winner);activeDuels.delete(id);}
       commit(winner,'arenaWin',[id],records=>{
         const a=records.get(winner),b=records.get(id);
@@ -110,8 +125,8 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
           onLeave(peer);
           send(loser.socket,{type:'arenaLeft'});
           send(peer.socket,{type:'arenaLeft'});
-          send(loser.socket,{type:'arenaResult',won:false,isDuel:true,bet:duel.bet,pot:duel.pot,winner:peer.account.profile.name,opponent:peer.account.profile.name});
-          send(peer.socket,{type:'arenaResult',won:true,isDuel:true,bet:duel.bet,pot:duel.pot,loser:loser.account.profile.name,opponent:loser.account.profile.name});
+          send(loser.socket,{type:'arenaResult',won:false,isDuel:true,bet:duel.bet,pot:duel.pot,winner:peer.account.profile.name,opponent:peer.account.profile.name,restoredHp:loserRestoredHp,maxHp:loserMaxHp});
+          send(peer.socket,{type:'arenaResult',won:true,isDuel:true,bet:duel.bet,pot:duel.pot,loser:loser.account.profile.name,opponent:loser.account.profile.name,winnerRemainingHp,restoredHp:winnerRestoredHp,maxHp:winnerMaxHp});
           publish(rooms.get(loser.room));
         }else{
           leave(loser);

@@ -140,7 +140,7 @@ export function renderTitleScreen(data: TitleScreenData): string {
             <div class="mode-header">
               <span class="mode-icon">🏡</span>
               <span class="mode-title">Khám Phá Một Mình</span>
-              <span class="mode-status-pill neutral">🍃 Offline Solo</span>
+              <span class="mode-status-pill neutral">🍃 Không cần mạng</span>
             </div>
             <p class="mode-desc">Tự do làm vườn, trồng trọt, câu cá và thám hiểm vũ trụ không cần kết nối mạng. Dữ liệu lưu an toàn trên máy.</p>
           </button>
@@ -151,7 +151,7 @@ export function renderTitleScreen(data: TitleScreenData): string {
           <button class="primary start-button title-start-btn" data-action="start" aria-label="Bắt đầu chơi ngay">
             <div class="btn-ripple-glow"></div>
             <span class="btn-main-label">✨ CHẠM ĐỂ BẮT ĐẦU ✨</span>
-            <small class="btn-sub-label">${t(data.saved ? 'Continue adventure' : 'Let’s play')} · TAP TO PLAY</small>
+            <small class="btn-sub-label">${t(data.saved ? 'Continue adventure' : 'Let’s play')} · ${t('Chạm để vào game')}</small>
           </button>
         </div>
       </main>
