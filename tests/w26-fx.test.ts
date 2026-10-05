@@ -61,6 +61,20 @@ test('laser gaze: every beam drawn is the GAZE line, and exactly the creatures i
   }
 });
 
+test('fairy and superhero effects carry distinct looks to remote clients', () => {
+  const fairy = rig([at(0, 2, 'target')]);
+  fairy.sim.disguise('dz_fairy', 0); fairy.sim.disguise('dz_fairy', 1);
+  fairy.sim.disguise('dz_fairy', 2); fairy.sim.disguise('dz_fairy', 3); run(fairy.sim, .6);
+  assert.ok(fairy.effects.some(e => e.look === 'flower'));
+  assert.ok(fairy.effects.some(e => e.look === 'roots'));
+  const hero = rig([at(0, 3, 'target')]);
+  hero.sim.disguise('dz_superhero', 0); hero.sim.disguise('dz_superhero', 1);
+  hero.sim.disguise('dz_superhero', 3); run(hero.sim, .82);
+  assert.ok(hero.effects.some(e => e.look === 'hero'));
+  assert.ok(hero.effects.some(e => e.look === 'heroDive' && e.radius === 5));
+  assert.ok(hero.effects.some(e => e.kind === 'impact' && e.look === 'hero'));
+});
+
 test('a beam plane lies along its facing at every angle (it was mirrored across z on diagonals)', () => {
   const scene = new T.Scene(), view = new CombatView(scene);
   for (const facing of [0, .7, -2.3, Math.PI / 2, 2.9]) {
@@ -117,7 +131,7 @@ test('the gaze view draws twin beams from the eyes to the line end, a ground ban
 // ---- 2. The battle robot is electric ------------------------------------------------------------------------------
 test('the battle robot fires electricity: volt bolts, a tesla turret, shock missiles and an electric tank wave', () => {
   assert.equal(M.DISGUISES.dz_mecha.weapon!.shot, 'volt'); assert.equal(M.ITEMS.pet_robot.pet!.shot, 'volt');
-  assert.ok(ELECTRIC_SHOTS.has('volt') && ELECTRIC_SHOTS.has('missile')); assert.deepEqual([...EFFECT_LOOKS].sort(), ['burn', 'eyes', 'shock']);
+  assert.ok(ELECTRIC_SHOTS.has('volt') && ELECTRIC_SHOTS.has('missile')); assert.deepEqual([...EFFECT_LOOKS].sort(), ['burn', 'eyes', 'flower', 'hero', 'heroDive', 'roots', 'shock']);
   const ring = () => [at(0, 3, 'a'), at(1, 4, 'b'), at(-1, 5, 'c')];
   // Missiles: every impact and blast is an electric burst; no stun added (they never stunned).
   const m = rig(ring()); m.sim.disguise('dz_mecha', 2); run(m.sim, 2);
