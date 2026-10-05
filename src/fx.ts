@@ -195,10 +195,11 @@ export class Effects {
   }
 
   /** Glowing orbs that pop out, then fly into `target` (loot, experience). */
-  orbs(at: Point3, count: number, color: string, target: () => T.Vector3, arrive?: () => void) {
+  orbs(at: Point3, count: number, color: string | string[], target: () => T.Vector3, arrive?: () => void, size = .42) {
+    const colors = Array.isArray(color) ? color : [color];
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * TAU;
-      this.glow.emit(at.x, (at.y ?? 0) + 1, at.z, Math.cos(angle) * 4, between(4, 7), Math.sin(angle) * 4, 3, .42, color, 4, target, i === 0 ? arrive ?? null : null, .25 + i * .04);
+      this.glow.emit(at.x, (at.y ?? 0) + 1, at.z, Math.cos(angle) * 4, between(4, 7), Math.sin(angle) * 4, 3, size, colors[i % colors.length], 4, target, i === 0 ? arrive ?? null : null, .25 + i * .04);
     }
   }
 
