@@ -6,8 +6,8 @@ export interface CombatHit { amount: number; critical: boolean; stun: number; li
 export interface CombatEffect extends CombatPoint { kind: 'arc'|'ring'|'impact'|'trail'|'beam'|'cast'|'toss'; color: string; radius: number; facing?: number; duration?: number; /** Arc width (rad) of a swing; beam width (m). */ arc?: number; width?: number;
   /** How the view dresses it (skill-fx.ts): 'eyes' twin eye lasers, 'burn' a laser scorch, 'shock' an electric burst. Same hit either way. */
   look?: EffectLook }
-export type EffectLook='eyes'|'burn'|'shock'|'flower'|'hero'|'heroDive'|'roots';
-export const EFFECT_LOOKS:readonly EffectLook[]=['eyes','burn','shock','flower','hero','heroDive','roots'];
+export type EffectLook='eyes'|'burn'|'shock'|'flower'|'hero'|'heroDive'|'roots'|'mountain';
+export const EFFECT_LOOKS:readonly EffectLook[]=['eyes','burn','shock','flower','hero','heroDive','roots','mountain'];
 /** The laser gaze (dz_superhero slot 2): one sweep of `arc` rad in `time` s, a `length` m line `width` m wide; a creature is hit again after `rehit` s. */
 export const GAZE={length:13,width:1,arc:1.8,time:1.2,step:.025,rehit:.25} as const;
 /** Shots that crackle with electricity and burst with a shock: the battle robot's bolts, its turret and missiles, the robot pet. */
@@ -264,11 +264,11 @@ this.petCooldown=Math.max(.1,pet.cd);this.emit('cast',pet,.35,colorFor(pet.shot?
       else if(distance<target.radius+1.6){this.damage(target,ally.kind==='bat'?.35:.6,.1);ally.cooldown=.7;this.emit('arc',ally,1,'#c6b2ee',angle);if(ally.kind==='bat')this.host.heal?.(.01);}
     }
     for(let i=this.projectiles.length-1;i>=0;i--){const shot=this.projectiles[i],from={x:shot.x,z:shot.z},step=Math.min(shot.speed*dt,shot.remaining),to={x:shot.x+shot.direction.x*step,z:shot.z+shot.direction.z*step};
-      if(this.host.clearShot&&!this.host.clearShot(from,to)){this.emit('impact',from,.4,shot.color,this.host.facing(),shot.kind==='boulder'?'hero':undefined);this.projectiles.splice(i,1);continue;}
+      if(this.host.clearShot&&!this.host.clearShot(from,to)){this.emit('impact',from,shot.kind==='boulder'?shot.explosion:.4,shot.color,this.host.facing(),shot.kind==='boulder'?'mountain':undefined);this.projectiles.splice(i,1);continue;}
       shot.x=to.x;shot.z=to.z;shot.remaining-=step;let consumed=false;
       const targets=this.host.targets().filter(t=>t.hp>0&&!shot.hit.has(t.id)&&distanceToSegment(t,from,to)<=t.radius+shot.radius).sort((a,b)=>Math.hypot(a.x-from.x,a.z-from.z)-Math.hypot(b.x-from.x,b.z-from.z));
-      this.helperShot=!!shot.helper;for(const target of targets){shot.hit.add(target.id);this.damage(target,shot.multiplier,shot.stun,shot.lift,1);const look=ELECTRIC_SHOTS.has(shot.kind)?'shock' as const:shot.kind==='boulder'?'hero' as const:undefined;this.emit('impact',target,shot.radius+.3,shot.color,this.host.facing(),look);if(shot.explosion)this.area(target,shot.explosion,shot.multiplier*.6,shot.stun,0,shot.color,1.2,look);if(!shot.pierce){consumed=true;break;}}
-      this.helperShot=false;if(consumed||shot.remaining<=0)this.projectiles.splice(i,1);
+      this.helperShot=!!shot.helper;for(const target of targets){shot.hit.add(target.id);this.damage(target,shot.multiplier,shot.stun,shot.lift,1);const look=ELECTRIC_SHOTS.has(shot.kind)?'shock' as const:shot.kind==='boulder'?'mountain' as const:undefined;this.emit('impact',target,shot.radius+.3,shot.color,this.host.facing(),look);if(shot.explosion)this.area(target,shot.explosion,shot.multiplier*.6,shot.stun,0,shot.color,1.2,look);if(!shot.pierce){consumed=true;break;}}
+      this.helperShot=false;if(!consumed&&shot.remaining<=0&&shot.kind==='boulder')this.emit('impact',shot,shot.explosion,shot.color,this.host.facing(),'mountain');if(consumed||shot.remaining<=0)this.projectiles.splice(i,1);
     }
   }
 }
