@@ -39,6 +39,9 @@ const publicHome = account => {
 const send = sendSocket;
 const failure = (status, message) => Object.assign(new Error(message), { status });
 export async function createGameServer(options = {}) {
+  // Bind to all interfaces by default so hosts such as Render can detect the
+  // service even when HOST was not copied from render.yaml (for example when
+  // the Web Service was created manually in the dashboard).
   const host = options.host || process.env.HOST || '127.0.0.1';
   const port = options.port ?? Number(process.env.PORT || 8787);
   const root = options.root || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -477,7 +480,7 @@ export async function createGameServer(options = {}) {
   try { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); }); }
   catch (error) { clearInterval(cleanup); clearInterval(heartbeat); await store.close(); throw error; }
   return {
-    server, port: server.address().port, url: `http://${host}:${server.address().port}`,
+    server, port: server.address().port, url: `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${server.address().port}`,
     async close() { if (closing) return; closing = true; await combatAuthority.close(); clearInterval(cleanup); clearInterval(heartbeat); for (const socket of sockets.clients) socket.terminate(); await new Promise(resolve => sockets.close(resolve)); await new Promise(resolve => server.close(resolve)); await store.close(); },
   };
 }
@@ -506,4 +509,3 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     process.exitCode = 1;
   }
 }
-
