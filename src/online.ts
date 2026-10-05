@@ -78,19 +78,22 @@ export function initOnline(game:GameBridge) {
   // HUD Chat Overlay
   const hudChatLog = el('div');
   hudChatLog.style.cssText = 'position:fixed; bottom:180px; left:16px; width:300px; z-index:100; pointer-events:none; display:flex; flex-direction:column; gap:4px; text-shadow:1px 1px 2px rgba(0,0,0,0.8); font-size:14px; font-weight:bold; color:white; font-family:sans-serif;';
-  document.body.appendChild(hudChatLog);
+  document.body.append(hudChatLog);
 
   const hudChatForm = el('form');
   hudChatForm.style.cssText = 'position:fixed; bottom:110px; left:16px; z-index:101; display:none;';
-  hudChatForm.innerHTML = `<input type="text" placeholder="Nhập tin nhắn..." autocomplete="off" style="width:200px; padding:10px 14px; border-radius:20px; border:none; background:rgba(255,255,255,0.9); pointer-events:auto; outline:none; box-shadow:0 2px 5px rgba(0,0,0,0.2); font-family:sans-serif;">`;
-  document.body.appendChild(hudChatForm);
+  const hudChatInput = el('input');
+  hudChatInput.type = 'text';
+  hudChatInput.placeholder = 'Nhập tin nhắn...';
+  hudChatInput.autocomplete = 'off';
+  hudChatInput.style.cssText = 'width:200px; padding:10px 14px; border-radius:20px; border:none; background:rgba(255,255,255,0.9); pointer-events:auto; outline:none; box-shadow:0 2px 5px rgba(0,0,0,0.2); font-family:sans-serif;';
+  hudChatForm.append(hudChatInput);
+  document.body.append(hudChatForm);
 
   const hudChatBtn = el('button');
   hudChatBtn.style.cssText = 'position:fixed; bottom:110px; left:16px; z-index:101; width:44px; height:44px; border-radius:50%; border:none; background:rgba(0,0,0,0.5); color:white; cursor:pointer; pointer-events:auto; font-size:20px; display:flex; justify-content:center; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.3);';
   hudChatBtn.innerText = '💬';
-  document.body.appendChild(hudChatBtn);
-
-  const hudChatInput = hudChatForm.querySelector('input')!;
+  document.body.append(hudChatBtn);
   hudChatBtn.onclick = () => { hudChatBtn.style.display = 'none'; hudChatForm.style.display = 'block'; hudChatInput.focus(); };
   hudChatInput.onblur = () => { setTimeout(() => { hudChatForm.style.display = 'none'; hudChatBtn.style.display = 'flex'; }, 200); };
   hudChatForm.onsubmit = (e) => {
@@ -163,8 +166,7 @@ export function initOnline(game:GameBridge) {
   world().onRemotePlayerClick=openPlayer;
   document.addEventListener('keydown',event=>{
     if(gameplayKey(event)!=='Enter'||event.repeat||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]'))return;
-    if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();
-    if(hudChatForm.style.display==='none'){hudChatBtn.style.display='none';hudChatForm.style.display='block';hudChatInput.focus();}
+    if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();captureChatDraft();tab='world';render();if(!dialog.open)dialog.showModal();content.querySelector<HTMLInputElement>('.social-chat-input')?.focus();
   });
   function refreshButton(){const label=account?t(status,{code:party||''}):t('Play together');toggle.textContent=socialSlot?'👥':`👥 ${label}`;toggle.title=label;toggle.setAttribute('aria-label',t('Play together'));dialog.setAttribute('aria-label',t('Play together'));close.setAttribute('aria-label',t('Close online menu'));toggle.dataset.online=String(!!account);}
   function expireSession(){
@@ -273,10 +275,12 @@ export function initOnline(game:GameBridge) {
         if(chat.length>60)chat.shift();
         if(dialog.open&&tab==='world')renderChat();
         
-        const entry = document.createElement('div');
-        entry.innerHTML = `<span style="color:#a6eb63">${message.name}:</span> ${message.message}`;
-        hudChatLog.appendChild(entry);
-        setTimeout(() => entry.remove(), 7000);
+        const entry = el('div');
+        const nameSpan = el('span', '', `${message.name}: `);
+        nameSpan.style.color = '#a6eb63';
+        entry.append(nameSpan, document.createTextNode(message.message));
+        hudChatLog.append(entry);
+        window.setTimeout(() => entry.remove(), 7000);
 
         game.showChatBubble?.(String(message.id), String(message.message));
       }
