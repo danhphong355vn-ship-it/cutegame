@@ -438,6 +438,32 @@ test('ground slam lifts the remote avatar, lands, and leaves the ground pose unc
  animate(.12);assert.equal(m.position.y,0,'landing returns to the ground');
 });
 
+test('superhero W rises and lands on both local and remote avatars',()=>{
+ const local=world();local.build('home');local.refreshPlayer();local.playDisguiseAction('dz_superhero',1);
+ const animateLocal=(dt:number)=>(local as unknown as {animatePlayer(dt:number):void}).animatePlayer(dt);
+ animateLocal(.08);assert.ok(local.player.position.y>local.position.y+.5);
+ local.player.position.copy(local.position);animateLocal(.12);assert.ok(Math.abs(local.player.position.y-local.position.y)<.01);
+ const remote=world();remote.addRemotePlayer('friend',{x:0,z:0,y:0});
+ const model=remote.remotePlayers.get('friend')!.mesh;
+ remote.playRemoteAction('friend','skill',1,{special:'dz_superhero'});
+ const animateRemote=(dt:number)=>(remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(dt);
+ animateRemote(.08);assert.ok(model.position.y>.5);
+ animateRemote(.12);assert.ok(Math.abs(model.position.y)<.01);
+});
+
+test('sustained flight keeps a flying stance instead of the walking cycle locally and remotely',()=>{
+ const local=world();local.build('home');local.refreshPlayer();local.playerFlying=true;local.moving=true;local.disguiseT=local.punchT=local.spinT=0;
+ (local as unknown as {animatePlayer(dt:number):void}).animatePlayer(.12);
+ assert.ok(local.player.getObjectByName('arm-left')!.rotation.x<-1);
+ assert.ok(Math.abs(local.player.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
+ const remote=world();remote.addRemotePlayer('friend',{x:0,z:0,y:1.7,moving:true,visual:{flight:1.7}});
+ const model=remote.remotePlayers.get('friend')!.mesh;
+ (remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.12);
+ assert.ok(model.getObjectByName('arm-left')!.rotation.x<-1);
+ assert.ok(Math.abs(model.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
+ assert.ok(model.position.y>1.6&&model.position.y<1.8,'flight height is not added twice');
+});
+
 test('punch flurry animates six alternating strikes locally and on a remote avatar',()=>{
  const local=world();local.build('home');local.startPunchFlurry();
  const animateLocal=(dt:number)=>(local as unknown as {animatePlayer(dt:number):void}).animatePlayer(dt);
