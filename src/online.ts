@@ -7,6 +7,7 @@ import { t, onLanguageChange } from './i18n.ts';
 import {gameplayKey} from './gameplay-controls.ts';
 import type {GameIntent,ActionReply} from './actions.ts';
 import {ARENA,inArena} from './world-events.ts';
+import {ArenaView} from './arena-view.ts';
 
 interface Explorer { id:string;username?:string;name:string;color:string;level:number;gear:SaveState['gear'];look?:LookId;online?:boolean;x?:number;z?:number;y?:number;facing?:number;moving?:boolean;space?:string;planet?:string;difficulty?:string }
 interface Home extends Explorer { discovered?:PlanetId[]; plots:SaveState['plots'];farm?:SaveState['farm'];placed?:unknown[];decorations?:unknown[];helper?:unknown;friends?:unknown[] }
@@ -132,7 +133,21 @@ export function initOnline(game:GameBridge) {
   const activities=el('div','online-activities'),bossBanner=el('div','world-boss-banner'),arenaInfo=el('div','arena-info');
   const arenaButton=button('⚔ Tham gia võ đài',()=>send({type:world().arenaActive?'arenaLeave':'arenaJoin'}));
   activities.append(bossBanner,arenaInfo,arenaButton);document.body.append(activities);
+  let arenaView:ArenaView|null=null;
+  function syncArenaView(){
+    const currentWorld=world() as any,presence=game.getPresence();
+    const shouldShow=presence.planet===ARENA.planet&&typeof currentWorld?.root?.add==='function'&&typeof ArenaView==='function';
+    if(shouldShow){
+      if(!arenaView)arenaView=new ArenaView();
+      if(arenaView.group.parent!==currentWorld.root){
+        arenaView.attach(currentWorld.root,currentWorld.scene);
+      }
+    }else if(arenaView){
+      arenaView.detach();
+    }
+  }
   function refreshActivities(){
+    syncArenaView();
     activities.hidden=!account||socket?.readyState!==WebSocket.OPEN;
     bossBanner.hidden=!eventBoss;
     if(eventBoss){const minutes=Math.max(0,Math.ceil((eventBoss.expiresAt-Date.now())/60000));bossBanner.textContent=`🐲 ${eventBoss.name} · ${eventBoss.planet} (${eventBoss.x}, ${eventBoss.z}) · còn ${minutes} phút · thế giới công cộng`;}
@@ -411,6 +426,7 @@ export function initOnline(game:GameBridge) {
       }
     }
     activitiesClock+=dt;if(activitiesClock>=.1){activitiesClock=0;refreshActivities();}
+    if(arenaView&&game.getPresence().planet===ARENA.planet)arenaView.update(dt,!!world().arenaActive);
     if(!account||socket?.readyState!==WebSocket.OPEN)return;
     if(Date.now() - lastPingAt > 2500){
       lastPingAt = Date.now();
