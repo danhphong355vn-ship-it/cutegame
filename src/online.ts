@@ -140,7 +140,7 @@ export function initOnline(game:GameBridge) {
     if(shouldShow){
       if(!arenaView)arenaView=new ArenaView();
       if(arenaView.group.parent!==currentWorld.root){
-        arenaView.attach(currentWorld.root,currentWorld.scene);
+        arenaView.attach(currentWorld.root,currentWorld.scene,currentWorld);
       }
     }else if(arenaView){
       arenaView.detach();
@@ -426,7 +426,7 @@ export function initOnline(game:GameBridge) {
       }
     }
     activitiesClock+=dt;if(activitiesClock>=.1){activitiesClock=0;refreshActivities();}
-    if(arenaView&&game.getPresence().planet===ARENA.planet)arenaView.update(dt,!!world().arenaActive);
+    if(arenaView&&game.getPresence().planet===ARENA.planet)arenaView.update(dt,!!world().arenaActive,world());
     if(!account||socket?.readyState!==WebSocket.OPEN)return;
     if(Date.now() - lastPingAt > 2500){
       lastPingAt = Date.now();
