@@ -3,294 +3,1676 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zoo Garden - Admin Dashboard</title>
+  <title>Zoo Garden - Modern Admin Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
-    .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    h1 { margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-    th { background-color: #f8f9fa; color: #2c3e50; }
-    tr:nth-child(even) { background-color: #f8f9fa; }
-    tr:hover { background-color: #f1f1f1; }
-    .btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; background-color: #3498db; }
-    .btn:hover { background-color: #2980b9; }
-    .btn-danger { background-color: #e74c3c; }
-    .btn-danger:hover { background-color: #c0392b; }
-    #login-section { max-width: 400px; margin: 50px auto; }
-    .form-group { margin-bottom: 15px; }
-    .form-group label { display: block; margin-bottom: 5px; }
-    .form-group input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-    #error-message { color: #e74c3c; margin-top: 10px; }
-    .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; background: #2ecc71; color: white; }
-    .badge.admin { background: #e67e22; }
+    :root {
+      --bg-base: #0b0f19;
+      --bg-surface: #131b2e;
+      --bg-card: #182238;
+      --bg-card-hover: #1f2c47;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(99, 102, 241, 0.5);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --cyan: #38bdf8;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #ef4444;
+      --purple: #a855f7;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: #243048; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334366; }
+
+    /* Login Screen */
+    #login-section {
+      margin: auto;
+      width: 100%;
+      max-width: 420px;
+      padding: 36px 32px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .brand-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, var(--primary), var(--cyan));
+      display: grid;
+      place-items: center;
+      font-size: 24px;
+      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+    }
+    .brand-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .brand-subtitle {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      font-weight: 700;
+    }
+
+    .form-group { margin-bottom: 18px; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), #4f46e5);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #4f46e5, #4338ca);
+      transform: translateY(-1px);
+    }
+    .btn-success { background: #059669; color: #fff; }
+    .btn-success:hover { background: #047857; }
+    .btn-amber { background: #d97706; color: #fff; }
+    .btn-amber:hover { background: #b45309; }
+    .btn-purple { background: #7e22ce; color: #fff; }
+    .btn-purple:hover { background: #6b21a8; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-cyan { background: #0284c7; color: #fff; }
+    .btn-cyan:hover { background: #0369a1; }
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    /* Top Nav */
+    header.top-nav {
+      background: rgba(19, 27, 46, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .nav-badge {
+      background: rgba(99, 102, 241, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.04);
+      padding: 5px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 10px var(--emerald);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    /* Main Container */
+    main.dashboard-container {
+      max-width: 1280px;
+      width: 100%;
+      margin: 28px auto;
+      padding: 0 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* KPI Summary Row */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .kpi-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    .kpi-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .kpi-info h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .kpi-info .kpi-value {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 4px;
+    }
+
+    /* Cards Grid for Event Controllers */
+    .controllers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+    .feature-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .feature-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .badge-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
+    }
+    .badge-pill.active { background: rgba(16, 185, 129, 0.2); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-pill.inactive { background: rgba(239, 68, 68, 0.2); color: var(--rose); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-pill.timer { background: rgba(56, 189, 248, 0.2); color: var(--cyan); border: 1px solid rgba(56, 189, 248, 0.3); font-family: 'JetBrains Mono', monospace; }
+
+    /* Broadcast Bar */
+    .broadcast-card {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(217, 119, 6, 0.03));
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .broadcast-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--amber);
+      white-space: nowrap;
+    }
+    .broadcast-input-wrap {
+      flex: 1;
+      min-width: 260px;
+      display: flex;
+      gap: 10px;
+    }
+    .broadcast-input-wrap input {
+      flex: 1;
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+    .broadcast-input-wrap input:focus {
+      border-color: var(--amber);
+    }
+
+    /* Player Table Section */
+    .table-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+    .table-toolbar {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      max-width: 380px;
+    }
+    .search-wrap input {
+      width: 100%;
+      padding: 10px 14px 10px 36px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    .search-wrap input:focus {
+      border-color: var(--primary);
+    }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+    .filter-tabs {
+      display: flex;
+      gap: 6px;
+      background: var(--bg-card);
+      padding: 4px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-btn.active {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    /* Table */
+    .table-wrap {
+      overflow-x: auto;
+    }
+    table.player-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    table.player-table th {
+      padding: 14px 20px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      background: rgba(0, 0, 0, 0.15);
+      border-bottom: 1px solid var(--border);
+    }
+    table.player-table td {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      font-size: 13px;
+      vertical-align: middle;
+    }
+    table.player-table tr:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Player cell */
+    .player-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .player-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 15px;
+      color: #fff;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .online-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid var(--bg-surface);
+      position: absolute;
+      bottom: 0;
+      right: 0;
+    }
+    .online-indicator.online { background: var(--emerald); }
+    .online-indicator.offline { background: var(--text-dim); }
+
+    .player-names .display-name {
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .player-names .user-handle {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Stat chips */
+    .level-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(99, 102, 241, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .stat-chip {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .stat-chip.hp { color: #f87171; }
+    .stat-chip.energy { color: var(--amber); }
+
+    .role-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .role-badge.admin {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .role-badge.player {
+      background: rgba(148, 163, 184, 0.1);
+      color: var(--text-muted);
+    }
+
+    .planet-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #cbd5e1;
+      font-size: 12px;
+    }
+
+    .action-btn-group {
+      display: flex;
+      gap: 6px;
+    }
+    .action-btn-group .btn {
+      padding: 6px 10px;
+      font-size: 11px;
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      animation: fadeIn 0.2s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .modal-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 840px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+    }
+    .modal-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-header h3 {
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .modal-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    /* Stats Editor Form */
+    .stats-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    .stat-input-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stat-input-card label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: uppercase;
+    }
+    .stat-input-card input, .stat-input-card select {
+      padding: 10px 14px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: #fff;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      outline: none;
+    }
+    .stat-input-card input:focus, .stat-input-card select:focus {
+      border-color: var(--primary);
+    }
+
+    /* Catalog Tabs */
+    .catalog-tabs-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .cat-tab-btn {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .cat-tab-btn.active {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+
+    /* Catalog Grid */
+    .catalog-grid-view {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 12px;
+      max-height: 480px;
+      overflow-y: auto;
+      padding: 4px;
+    }
+    .catalog-item-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 14px 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .catalog-item-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--cyan);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(56, 189, 248, 0.15);
+    }
+    .catalog-item-card img {
+      width: 50px;
+      height: 50px;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+    }
+    .catalog-item-card .item-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.3;
+      max-height: 32px;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .catalog-item-card .item-id {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Toast Notification */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 18px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      pointer-events: auto;
+      animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .toast.success { border-left: 4px solid var(--emerald); }
+    .toast.error { border-left: 4px solid var(--rose); }
+    .toast.info { border-left: 4px solid var(--cyan); }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
   </style>
 </head>
 <body>
-  <div class="container" id="login-section">
-    <h1>Đăng nhập Admin</h1>
-    <div class="form-group">
-      <label>Tên đăng nhập</label>
-      <input type="text" id="username">
-    </div>
-    <div class="form-group">
-      <label>Mật khẩu</label>
-      <input type="password" id="password">
-    </div>
-    <button class="btn" onclick="login()">Đăng nhập</button>
-    <div id="error-message"></div>
-  </div>
 
-  <div class="container" id="dashboard-section" style="display: none;">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h1>Admin Dashboard</h1>
-      <button class="btn btn-danger" onclick="logout()">Đăng xuất</button>
-    </div>
-    
-    <div style="background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-      <h3>Phát Loa Toàn Server</h3>
-      <div style="display: flex; gap: 10px;">
-        <input type="text" id="broadcast-msg" placeholder="Nhập thông báo..." style="flex: 1; padding: 8px;">
-        <button class="btn" onclick="sendBroadcast()" style="background-color: #f39c12;">Phát Thông Báo</button>
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <!-- Login Section -->
+  <div id="login-section" style="display: none;">
+    <div class="brand-header">
+      <div class="brand-icon">🌿</div>
+      <div>
+        <div class="brand-title">Zoo Garden Admin</div>
+        <div class="brand-subtitle">Control Center</div>
       </div>
     </div>
-
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h3>Danh sách người chơi</h3>
-      <button class="btn" onclick="fetchUsers()">Làm mới danh sách</button>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Tên đăng nhập</th>
-          <th>Tên nhân vật</th>
-          <th>Cấp độ</th>
-          <th>Vai trò</th>
-          <th>Hành động</th>
-        </tr>
-      </thead>
-      <tbody id="user-table-body">
-      </tbody>
-    </table>
+    <form onsubmit="handleLogin(event)">
+      <div class="form-group">
+        <label>Tên đăng nhập</label>
+        <input type="text" id="username" placeholder="Nhập tài khoản admin..." required autofocus autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Mật khẩu</label>
+        <input type="password" id="password" placeholder="Nhập mật khẩu..." required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;" id="login-btn">
+        Đăng nhập Quản trị
+      </button>
+      <div id="login-error" style="color: var(--rose); font-size: 13px; margin-top: 12px; text-align: center; font-weight: 600;"></div>
+    </form>
   </div>
 
-  <!-- Catalog Modal -->
-  <div id="catalog-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index: 1000; overflow-y: auto;">
-    <div style="background:#fff; max-width:900px; margin:50px auto; padding:20px; border-radius:8px;">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h2>Chọn vật phẩm cho <span id="gift-target-name" style="color:#e74c3c;"></span></h2>
-        <button onclick="closeCatalog()" class="btn btn-danger">Đóng</button>
+  <!-- Dashboard Section -->
+  <div id="dashboard-section" style="display: none;">
+    <!-- Top Navigation -->
+    <header class="top-nav">
+      <div class="nav-brand">
+        <div class="brand-icon" style="width: 38px; height: 38px; font-size: 20px;">🌿</div>
+        <div>
+          <span style="font-weight: 800; font-size: 16px;">Zoo Garden</span>
+          <span class="nav-badge" style="margin-left: 8px;">ADMIN CONSOLE</span>
+        </div>
       </div>
-      <div id="catalog-tabs" style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;"></div>
-      <input type="text" id="catalog-search" placeholder="Tìm tên vật phẩm (Tiếng Việt hoặc ID)..." style="width:100%; padding:10px; margin-bottom:15px; box-sizing:border-box;" onkeyup="filterCatalog()">
-      <div id="catalog-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px;">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <div class="server-status">
+          <div class="status-dot"></div>
+          <span>Server :8787</span>
+        </div>
+        <button class="btn btn-ghost" onclick="refreshAllData()" title="Tải lại dữ liệu">🔄 Làm mới</button>
+        <button class="btn btn-danger" onclick="logout()">Đăng xuất</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="dashboard-container">
+      <!-- KPI Row -->
+      <section class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(99, 102, 241, 0.15); color: var(--cyan);">👥</div>
+          <div class="kpi-info">
+            <h4>Tổng Người Chơi</h4>
+            <div class="kpi-value" id="kpi-total-users">0</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: var(--emerald);">🟢</div>
+          <div class="kpi-info">
+            <h4>Đang Trực Tuyến</h4>
+            <div class="kpi-value" id="kpi-online-users">0</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: var(--amber);">⚡</div>
+          <div class="kpi-info">
+            <h4>Lưu Hành Năng Lượng</h4>
+            <div class="kpi-value" id="kpi-total-energy">0</div>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: var(--rose);">🛡️</div>
+          <div class="kpi-info">
+            <h4>Quản Trị Viên</h4>
+            <div class="kpi-value" id="kpi-admin-count">0</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Controllers Grid (World Boss, PvP Arena, Mass Reward) -->
+      <section class="controllers-grid">
+        <!-- 1. World Boss Event Controller -->
+        <div class="feature-card">
+          <div class="feature-header">
+            <div class="feature-title">
+              <span>🐉</span>
+              <span>BOSS THẾ GIỚI</span>
+            </div>
+            <div id="wb-status-badge" class="badge-pill timer">Đang kiểm tra...</div>
+          </div>
+          <div id="wb-active-info" style="font-size: 13px; color: var(--cyan); background: rgba(56, 189, 248, 0.08); padding: 10px; border-radius: var(--radius-sm); border: 1px solid rgba(56, 189, 248, 0.2); display: none;">
+            <!-- Active boss dynamic details -->
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Loại Boss</label>
+              <select id="wb-type" onchange="autoFillBossPlanet()">
+                <option value="dragon">🐉 Rồng Lửa</option>
+                <option value="mushking">🍄 Vua Nấm Titan</option>
+                <option value="titan_kraken">🐙 Kraken Biển Sâu</option>
+                <option value="magmaturtle">🐢 Rùa Dung Nham</option>
+                <option value="golem">🗿 Golem Nham Thạch</option>
+                <option value="frostowl">🦉 Cú Băng Khổng Lồ</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Hành Tinh</label>
+              <select id="wb-planet">
+                <option value="lava">🌋 Đảo Núi Lửa</option>
+                <option value="home">🌱 Đồng Cỏ Hồ Xanh</option>
+                <option value="ocean">🌊 Đảo Đại Dương</option>
+                <option value="jungle">🍄 Rừng Nấm</option>
+                <option value="ice">❄️ Băng Giá</option>
+                <option value="desert">🏜️ Sa Mạc</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Máu Boss (HP) <span style="font-size: 11px; color: var(--text-dim);">(Tùy chỉnh độ trâu)</span></label>
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="wb-hp" value="50000" min="1000" step="5000" style="flex: 1;">
+              <button class="btn btn-ghost" onclick="document.getElementById('wb-hp').value=50000" style="padding: 6px 10px; font-size: 11px;">50K</button>
+              <button class="btn btn-ghost" onclick="document.getElementById('wb-hp').value=100000" style="padding: 6px 10px; font-size: 11px;">100K</button>
+              <button class="btn btn-ghost" onclick="document.getElementById('wb-hp').value=200000" style="padding: 6px 10px; font-size: 11px;">200K</button>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-amber" onclick="summonCustomBoss()" style="flex: 1;">🚀 Triệu Hồi Boss</button>
+            <button class="btn btn-danger" id="wb-dismiss-btn" onclick="dismissWorldBoss()" style="display: none;">🛑 Dọn Dẹp Boss</button>
+            <button class="btn btn-cyan" id="wb-teleport-btn" onclick="teleportAllToBoss()" style="display: none;" title="Dịch chuyển tất cả người chơi online đến boss">🛸 Kéo Tất Cả Đến</button>
+          </div>
+        </div>
+
+        <!-- 2. PvP Arena Controls -->
+        <div class="feature-card">
+          <div class="feature-header">
+            <div class="feature-title">
+              <span>⚔️</span>
+              <span>ĐẤU TRƯỜNG PVP</span>
+            </div>
+            <div id="pvp-status-badge" class="badge-pill active">Đang mở</div>
+          </div>
+          <div style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+            Khu vực võ đài tại <b>Đảo Núi Lửa (x: -36, z: 36)</b>. Cho phép người chơi so tài võ nghệ trực tiếp mà không lo mất trang bị.
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-card); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border);">
+            <div>
+              <div style="font-weight: 700; font-size: 13px;">Trạng Thái Đấu Trường</div>
+              <div id="pvp-mode-text" style="font-size: 11px; color: var(--emerald);">Người chơi có thể vào so tài</div>
+            </div>
+            <button class="btn btn-ghost" id="pvp-toggle-btn" onclick="togglePvP()">Bật/Tắt PvP</button>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-purple" id="pvp-golden-btn" onclick="toggleGoldenHour()" style="flex: 1;">🔥 Giờ Vàng (x2 Thưởng)</button>
+            <button class="btn btn-cyan" onclick="teleportAllToArena()" style="flex: 1;">🛸 Kéo Tất Cả Đến Võ Đài</button>
+          </div>
+        </div>
+
+        <!-- 3. Mass Reward Server Gift -->
+        <div class="feature-card">
+          <div class="feature-header">
+            <div class="feature-title">
+              <span>🎁</span>
+              <span>PHÁT QUÀ TOÀN SERVER</span>
+            </div>
+            <div class="badge-pill active">Hàng Loạt</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Loại Quà Tặng</label>
+              <select id="mass-type">
+                <option value="energy">⚡ Năng Lượng (Energy)</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label>Phạm Vi Nhận</label>
+              <select id="mass-scope">
+                <option value="online">🟢 Đang Online</option>
+                <option value="all">👥 Tất Cả Tài Khoản</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>Số Lượng</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="number" id="mass-amount" value="10000" min="1" step="1000" style="flex: 1;">
+              <button class="btn btn-ghost" onclick="document.getElementById('mass-amount').value=5000" style="padding: 6px 10px; font-size: 11px;">5K</button>
+              <button class="btn btn-ghost" onclick="document.getElementById('mass-amount').value=20000" style="padding: 6px 10px; font-size: 11px;">20K</button>
+              <button class="btn btn-ghost" onclick="document.getElementById('mass-amount').value=50000" style="padding: 6px 10px; font-size: 11px;">50K</button>
+            </div>
+          </div>
+          <button class="btn btn-success" onclick="sendMassReward()" style="width: 100%; margin-top: auto;">
+            🎁 Phát Quà Cho Toàn Bộ Người Chơi
+          </button>
+        </div>
+      </section>
+
+      <!-- Global Broadcast Card -->
+      <section class="broadcast-card">
+        <div class="broadcast-title">
+          📢 PHÁT LOA TOÀN SERVER
+        </div>
+        <div class="broadcast-input-wrap">
+          <input type="text" id="broadcast-msg" placeholder="Nhập thông báo gửi tới tất cả người chơi đang online..." onkeydown="if(event.key==='Enter')sendBroadcast()">
+          <button class="btn btn-amber" onclick="sendBroadcast()">Gửi Thông Báo</button>
+        </div>
+      </section>
+
+      <!-- Player Directory Table -->
+      <section class="table-section">
+        <div class="table-toolbar">
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-player" placeholder="Tìm theo tên đăng nhập hoặc tên nhân vật..." oninput="filterPlayers()">
+          </div>
+          <div class="filter-tabs">
+            <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">Tất cả</button>
+            <button class="filter-btn" data-filter="online" onclick="setFilter('online', this)">Đang Online 🟢</button>
+            <button class="filter-btn" data-filter="admin" onclick="setFilter('admin', this)">Admin 🛡️</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="player-table">
+            <thead>
+              <tr>
+                <th>Người chơi</th>
+                <th>Cấp độ</th>
+                <th>Chỉ số (HP / Energy)</th>
+                <th>Hành tinh</th>
+                <th>Vai trò</th>
+                <th style="text-align: right;">Thao tác Quản trị</th>
+              </tr>
+            </thead>
+            <tbody id="player-table-body">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 30px;">Đang tải danh sách người chơi...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Stats Editor (Chỉnh Sửa Level, EXP, Máu, Energy) -->
+  <div id="stats-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-box" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3>⚙️ Chỉnh sửa chỉ số: <span id="stats-target-name" style="color: var(--cyan);"></span></h3>
+        <button class="btn btn-ghost" onclick="closeStatsModal()" style="padding: 4px 10px;">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="stats-target-id">
+        <div class="stats-form-grid">
+          <div class="stat-input-card">
+            <label>⭐ Cấp độ (Level)</label>
+            <input type="number" id="stats-level" min="1" max="999">
+          </div>
+          <div class="stat-input-card">
+            <label>✨ Kinh nghiệm (EXP)</label>
+            <input type="number" id="stats-xp" min="0">
+          </div>
+          <div class="stat-input-card">
+            <label>❤️ Máu (HP) <span id="stats-max-hp-hint" style="font-size: 11px; color: var(--text-dim); font-weight: normal;"></span></label>
+            <input type="number" id="stats-hp" min="1">
+            <button type="button" class="btn btn-ghost" onclick="fillFullHp()" style="font-size: 11px; padding: 4px 8px; margin-top: 4px;">❤️ Hồi đầy HP</button>
+          </div>
+          <div class="stat-input-card">
+            <label>⚡ Năng lượng (Energy)</label>
+            <input type="number" id="stats-energy" min="0">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeStatsModal()">Hủy</button>
+        <button class="btn btn-primary" onclick="savePlayerStats()">💾 Lưu Chỉ Số</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Item Catalog (Tặng Vật Phẩm) -->
+  <div id="catalog-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-box" style="max-width: 960px;">
+      <div class="modal-header">
+        <div>
+          <h3>🎁 Kho Vật Phẩm & Trang Bị</h3>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">
+            Đang tặng cho: <b id="catalog-target-name" style="color: var(--cyan);"></b>
+          </div>
+        </div>
+        <button class="btn btn-ghost" onclick="closeCatalogModal()" style="padding: 4px 10px;">✕</button>
+      </div>
+      <div class="modal-body" style="padding-bottom: 16px;">
+        <div class="catalog-tabs-bar" id="catalog-tabs-bar"></div>
+        <div class="search-wrap" style="max-width: 100%; margin-bottom: 16px;">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="catalog-search" placeholder="Tìm kiếm theo tên Tiếng Việt hoặc ID vật phẩm..." oninput="filterCatalog()">
+        </div>
+        <div class="catalog-grid-view" id="catalog-grid"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeCatalogModal()">Đóng</button>
       </div>
     </div>
   </div>
 
   <script>
+    // Planet translation dictionary
+    const PLANET_NAMES = {
+      home: '🌱 Đồng Cỏ Hồ Xanh',
+      toybox: '🧸 Hộp Đồ Chơi',
+      lava: '🌋 Núi Lửa Dung Nham',
+      jungle: '🍄 Rừng Nấm',
+      desert: '🏜️ Sa Mạc Cát',
+      ice: '❄️ Băng Giá',
+      space: '🚀 Không Gian',
+      cloud: '☁️ Mây Trắng',
+      ocean: '🌊 Đại Dương'
+    };
+
+    const BOSS_CONFIGS = {
+      dragon: { name: 'Rồng Lửa', planet: 'lava', x: 36, z: 36 },
+      mushking: { name: 'Vua Nấm Titan', planet: 'home', x: 36, z: 36 },
+      titan_kraken: { name: 'Kraken Biển Sâu', planet: 'ocean', x: 36, z: 36 },
+      magmaturtle: { name: 'Rùa Dung Nham', planet: 'lava', x: 0, z: 18 },
+      golem: { name: 'Golem Nham Thạch', planet: 'lava', x: -18, z: 24 },
+      frostowl: { name: 'Cú Băng Khổng Lồ', planet: 'ice', x: 20, z: 20 }
+    };
+
+    let allUsers = [];
+    let currentFilter = 'all';
+    let catalogItems = [];
+    let activeCatalogCategory = 'Tất cả';
+    let activeTargetId = null;
+    let activeBossEvent = null;
+
+    // Toast helper
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️';
+      toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s';
+        setTimeout(() => toast.remove(), 300);
+      }, 3200);
+    }
+
     async function apiCall(url, options = {}) {
       const res = await fetch(url, {
         ...options,
         headers: { 'Content-Type': 'application/json', ...options.headers }
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Lỗi kết nối');
+      if (!res.ok) throw new Error(data.error || 'Lỗi kết nối máy chủ');
       return data;
     }
 
     async function checkSession() {
       try {
         const data = await apiCall('/api/auth/session');
-        if (data.account) {
+        if (data.account && data.account.isAdmin) {
           showDashboard();
+        } else {
+          document.getElementById('login-section').style.display = 'block';
         }
-      } catch (e) {
-        // Not logged in
+      } catch {
+        document.getElementById('login-section').style.display = 'block';
       }
     }
 
-    async function login() {
-      const user = document.getElementById('username').value;
+    async function handleLogin(e) {
+      e.preventDefault();
+      const user = document.getElementById('username').value.trim();
       const pass = document.getElementById('password').value;
-      const err = document.getElementById('error-message');
-      err.textContent = 'Đang xử lý...';
+      const err = document.getElementById('login-error');
+      const btn = document.getElementById('login-btn');
+
+      err.textContent = '';
+      btn.disabled = true;
+      btn.textContent = 'Đang xác thực...';
+
       try {
         await apiCall('/api/auth/login', {
           method: 'POST',
           body: JSON.stringify({ username: user, password: pass })
         });
-        err.textContent = '';
         showDashboard();
       } catch (e) {
         err.textContent = e.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Đăng nhập Quản trị';
       }
     }
 
     async function logout() {
-      await apiCall('/api/auth/logout', { method: 'POST' });
-      document.getElementById('login-section').style.display = 'block';
+      try {
+        await apiCall('/api/auth/logout', { method: 'POST' });
+      } catch {}
       document.getElementById('dashboard-section').style.display = 'none';
+      document.getElementById('login-section').style.display = 'block';
+      showToast('Đã đăng xuất thành công', 'info');
     }
 
     function showDashboard() {
       document.getElementById('login-section').style.display = 'none';
       document.getElementById('dashboard-section').style.display = 'block';
+      refreshAllData();
+      setInterval(checkWorldBossStatus, 10000);
+    }
+
+    function refreshAllData() {
       fetchUsers();
+      checkWorldBossStatus();
+      checkPvPStatus();
     }
 
     async function fetchUsers() {
       try {
         const data = await apiCall('/api/admin/users');
-        const tbody = document.getElementById('user-table-body');
-        tbody.innerHTML = '';
-        data.users.forEach(u => {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td>${u.username}</td>
-            <td>${u.profile.name}</td>
-            <td>${u.profile.level || 1}</td>
-            <td>
-              ${u.isAdmin ? '<span class="badge admin">Admin</span>' : '<span class="badge">Người chơi</span>'}
-            </td>
-            <td>
-              <button class="btn" onclick="giveEnergy('${u.id}', '${u.profile.name}')" style="background-color: #27ae60; padding: 4px 8px; font-size: 12px; margin-right: 5px;">+ Energy</button>
-              <button class="btn" onclick="giveItem('${u.id}', '${u.profile.name}')" style="background-color: #8e44ad; padding: 4px 8px; font-size: 12px;">+ Vật phẩm</button>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
+        allUsers = data.users || [];
+        updateKpis();
+        renderPlayerTable();
       } catch (e) {
         if (e.message.includes('Admin access required')) {
-           alert('Tài khoản của bạn không có quyền Admin!');
-           logout();
+          showToast('Tài khoản không có quyền Admin!', 'error');
+          logout();
         } else {
-           alert('Lỗi lấy danh sách user: ' + e.message);
+          showToast('Không thể tải người chơi: ' + e.message, 'error');
         }
       }
     }
 
+    function updateKpis() {
+      const total = allUsers.length;
+      const online = allUsers.filter(u => u.isOnline).length;
+      const totalEnergy = allUsers.reduce((sum, u) => sum + (u.profile?.energy || 0), 0);
+      const admins = allUsers.filter(u => u.isAdmin).length;
+
+      document.getElementById('kpi-total-users').textContent = total.toLocaleString();
+      document.getElementById('kpi-online-users').textContent = online.toLocaleString();
+      document.getElementById('kpi-total-energy').textContent = totalEnergy.toLocaleString();
+      document.getElementById('kpi-admin-count').textContent = admins.toLocaleString();
+    }
+
+    function setFilter(filter, btn) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderPlayerTable();
+    }
+
+    function filterPlayers() {
+      renderPlayerTable();
+    }
+
+    function renderPlayerTable() {
+      const query = document.getElementById('search-player').value.toLowerCase().trim();
+      const tbody = document.getElementById('player-table-body');
+      tbody.innerHTML = '';
+
+      const filtered = allUsers.filter(u => {
+        if (currentFilter === 'online' && !u.isOnline) return false;
+        if (currentFilter === 'admin' && !u.isAdmin) return false;
+        if (query) {
+          const matchUser = u.username.toLowerCase().includes(query);
+          const matchName = (u.profile?.name || '').toLowerCase().includes(query);
+          if (!matchUser && !matchName) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 36px;">Không tìm thấy người chơi nào phù hợp.</td></tr>`;
+        return;
+      }
+
+      filtered.forEach(u => {
+        const p = u.profile || {};
+        const tr = document.createElement('tr');
+        const color = p.color || '#6366f1';
+        const initial = (p.name || u.username || '?')[0].toUpperCase();
+        const planetLabel = PLANET_NAMES[u.planet] || u.planet || '🌱 Đồng Cỏ';
+        const hp = Math.ceil(p.hp || 100);
+        const maxHp = Math.round(u.maxHp || 100);
+
+        tr.innerHTML = `
+          <td>
+            <div class="player-cell">
+              <div class="player-avatar" style="background: ${color};">
+                ${initial}
+                <div class="online-indicator ${u.isOnline ? 'online' : 'offline'}" title="${u.isOnline ? 'Đang Online' : 'Ngoại tuyến'}"></div>
+              </div>
+              <div class="player-names">
+                <div class="display-name">
+                  ${escapeHtml(p.name || u.username)}
+                  ${u.isOnline ? '<span style="color:var(--emerald); font-size:11px;">(online)</span>' : ''}
+                </div>
+                <div class="user-handle">@${escapeHtml(u.username)}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="level-badge">Lv.${p.level || 1}</span>
+            <div style="font-size: 11px; color: var(--text-dim); margin-top: 3px; font-family:'JetBrains Mono',monospace;">
+              ${(p.xp || 0).toLocaleString()} EXP
+            </div>
+          </td>
+          <td>
+            <div class="stat-chip hp">❤️ ${hp}/${maxHp}</div>
+            <div class="stat-chip energy" style="margin-top: 3px;">⚡ ${(p.energy || 0).toLocaleString()}</div>
+          </td>
+          <td>
+            <span class="planet-tag">${planetLabel}</span>
+          </td>
+          <td>
+            ${u.isAdmin ? '<span class="role-badge admin">Admin 🛡️</span>' : '<span class="role-badge player">Người chơi</span>'}
+          </td>
+          <td style="text-align: right;">
+            <div class="action-btn-group" style="justify-content: flex-end;">
+              <button class="btn btn-amber" onclick="quickEnergy('${u.id}', '${escapeHtml(p.name || u.username)}')">⚡ +Energy</button>
+              <button class="btn btn-purple" onclick="openCatalogModal('${u.id}', '${escapeHtml(p.name || u.username)}')">🎁 Tặng Đồ</button>
+              <button class="btn btn-primary" onclick="openStatsModal('${u.id}', '${escapeHtml(p.name || u.username)}', ${p.level || 1}, ${p.xp || 0}, ${hp}, ${maxHp}, ${p.energy || 0})">⚙️ Sửa</button>
+              <button class="btn btn-ghost" onclick="teleportPlayerHome('${u.id}', '${escapeHtml(p.name || u.username)}')" title="Dịch chuyển người chơi về nhà">🛸 Về Nhà</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+    }
+
+    // Auto fill planet on boss type change
+    function autoFillBossPlanet() {
+      const type = document.getElementById('wb-type').value;
+      if (BOSS_CONFIGS[type]) {
+        document.getElementById('wb-planet').value = BOSS_CONFIGS[type].planet;
+      }
+    }
+
+    // World Boss APIs
+    async function checkWorldBossStatus() {
+      try {
+        const data = await apiCall('/api/admin/world-boss');
+        const badge = document.getElementById('wb-status-badge');
+        const info = document.getElementById('wb-active-info');
+        const dismissBtn = document.getElementById('wb-dismiss-btn');
+        const tpBtn = document.getElementById('wb-teleport-btn');
+
+        if (data.active) {
+          activeBossEvent = data.active;
+          badge.className = 'badge-pill active';
+          badge.textContent = '🟢 Đang Hoạt Động';
+          info.style.display = 'block';
+          info.innerHTML = `
+            <b>${data.active.name}</b> đang xuất hiện tại <b>${PLANET_NAMES[data.active.planet] || data.active.planet}</b> (tọa độ: ${data.active.x}, ${data.active.z})!
+          `;
+          dismissBtn.style.display = 'inline-flex';
+          tpBtn.style.display = 'inline-flex';
+        } else {
+          activeBossEvent = null;
+          badge.className = 'badge-pill timer';
+          const remainingMinutes = Math.max(0, Math.round((data.nextAt - Date.now()) / 60000));
+          badge.textContent = `⏱️ Tự động sau: ${remainingMinutes} phút`;
+          info.style.display = 'none';
+          dismissBtn.style.display = 'none';
+          tpBtn.style.display = 'none';
+        }
+      } catch (e) {
+        console.error('World boss status error:', e);
+      }
+    }
+
+    async function summonCustomBoss() {
+      const type = document.getElementById('wb-type').value;
+      const planet = document.getElementById('wb-planet').value;
+      const hp = parseInt(document.getElementById('wb-hp').value, 10) || 50000;
+      const base = BOSS_CONFIGS[type] || { name: 'Boss Thế Giới', x: 36, z: 36 };
+
+      try {
+        await apiCall('/api/admin/world-boss', {
+          method: 'POST',
+          body: JSON.stringify({
+            type,
+            planet,
+            name: base.name,
+            x: base.x,
+            z: base.z,
+            hp
+          })
+        });
+        showToast(`Đã triệu hồi ${base.name} thành công và phát loa toàn server!`, 'success');
+        checkWorldBossStatus();
+      } catch (e) {
+        showToast('Lỗi triệu hồi: ' + e.message, 'error');
+      }
+    }
+
+    async function dismissWorldBoss() {
+      if (!confirm('Bạn có chắc muốn giải tán Boss Thế Giới hiện tại?')) return;
+      try {
+        await apiCall('/api/admin/world-boss/dismiss', { method: 'POST' });
+        showToast('Đã giải tán Boss Thế Giới!', 'info');
+        checkWorldBossStatus();
+      } catch (e) {
+        showToast('Lỗi dọn dẹp boss: ' + e.message, 'error');
+      }
+    }
+
+    async function teleportAllToBoss() {
+      if (!activeBossEvent) return showToast('Không có boss nào đang hoạt động!', 'error');
+      if (!confirm(`Kéo toàn bộ người chơi online đến vị trí của ${activeBossEvent.name}?`)) return;
+
+      try {
+        const res = await apiCall('/api/admin/teleport-all', {
+          method: 'POST',
+          body: JSON.stringify({
+            planet: activeBossEvent.planet,
+            x: activeBossEvent.x,
+            z: activeBossEvent.z
+          })
+        });
+        showToast(`Đã triệu tập ${res.count} người chơi đến đánh Boss!`, 'success');
+      } catch (e) {
+        showToast('Lỗi triệu tập: ' + e.message, 'error');
+      }
+    }
+
+    // PvP Arena APIs
+    async function checkPvPStatus() {
+      try {
+        const data = await apiCall('/api/admin/pvp');
+        const badge = document.getElementById('pvp-status-badge');
+        const text = document.getElementById('pvp-mode-text');
+        const goldenBtn = document.getElementById('pvp-golden-btn');
+
+        if (data.enabled) {
+          badge.className = 'badge-pill active';
+          badge.textContent = '🟢 Đang Mở';
+          text.textContent = 'Người chơi có thể vào võ đài so tài';
+          text.style.color = 'var(--emerald)';
+        } else {
+          badge.className = 'badge-pill inactive';
+          badge.textContent = '🔴 Đang Đóng';
+          text.textContent = 'Đấu trường hiện đang tạm khóa';
+          text.style.color = 'var(--rose)';
+        }
+
+        if (data.goldenHour) {
+          goldenBtn.textContent = '⌛ Tắt Giờ Vàng (x2)';
+          goldenBtn.className = 'btn btn-amber';
+        } else {
+          goldenBtn.textContent = '🔥 Giờ Vàng (x2 Thưởng)';
+          goldenBtn.className = 'btn btn-purple';
+        }
+      } catch (e) {
+        console.error('PvP status error:', e);
+      }
+    }
+
+    async function togglePvP() {
+      try {
+        const res = await apiCall('/api/admin/pvp/toggle', { method: 'POST' });
+        showToast(res.enabled ? 'Đã MỞ CỬA Đấu Trường PvP!' : 'Đã ĐÓNG CỬA Đấu Trường PvP!', 'info');
+        checkPvPStatus();
+      } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+      }
+    }
+
+    async function toggleGoldenHour() {
+      try {
+        const res = await apiCall('/api/admin/pvp/golden-hour', { method: 'POST' });
+        showToast(res.goldenHour ? 'Đã kích hoạt GIỜ VÀNG ĐẤU TRƯỜNG x2!' : 'Đã tắt Giờ Vàng Đấu Trường.', 'success');
+        checkPvPStatus();
+      } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+      }
+    }
+
+    async function teleportAllToArena() {
+      if (!confirm('Kéo toàn bộ người chơi online đến Đấu Trường Núi Lửa?')) return;
+      try {
+        const res = await apiCall('/api/admin/teleport-all', {
+          method: 'POST',
+          body: JSON.stringify({ planet: 'lava', x: -36, z: 36 })
+        });
+        showToast(`Đã kéo ${res.count} người chơi đến Đấu Trường!`, 'success');
+      } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+      }
+    }
+
+    // Teleport single player home
+    async function teleportPlayerHome(targetId, name) {
+      try {
+        await apiCall('/api/admin/teleport', {
+          method: 'POST',
+          body: JSON.stringify({ targetId, planet: 'home', x: 0, z: 0 })
+        });
+        showToast(`Đã dịch chuyển [${name}] về nhà!`, 'success');
+        fetchUsers();
+      } catch (e) {
+        showToast('Lỗi dịch chuyển: ' + e.message, 'error');
+      }
+    }
+
+    // Mass Reward API
+    async function sendMassReward() {
+      const type = document.getElementById('mass-type').value;
+      const scope = document.getElementById('mass-scope').value;
+      const amount = parseInt(document.getElementById('mass-amount').value, 10);
+      if (isNaN(amount) || amount <= 0) return showToast('Số lượng quà không hợp lệ!', 'error');
+
+      const scopeName = scope === 'online' ? 'người chơi đang online' : 'toàn bộ tài khoản';
+      if (!confirm(`Xác nhận phát +${amount.toLocaleString()} Năng Lượng cho ${scopeName}?`)) return;
+
+      try {
+        const res = await apiCall('/api/admin/mass-reward', {
+          method: 'POST',
+          body: JSON.stringify({ type, amount, scope })
+        });
+        showToast(`Đã phát quà thành công cho ${res.count} người chơi!`, 'success');
+        fetchUsers();
+      } catch (e) {
+        showToast('Lỗi phát quà: ' + e.message, 'error');
+      }
+    }
+
+    // Broadcast API
     async function sendBroadcast() {
-      const msg = document.getElementById('broadcast-msg').value;
-      if (!msg) return alert('Vui lòng nhập thông báo!');
+      const input = document.getElementById('broadcast-msg');
+      const msg = input.value.trim();
+      if (!msg) return showToast('Vui lòng nhập thông báo!', 'error');
+
       try {
         await apiCall('/api/admin/broadcast', {
           method: 'POST',
           body: JSON.stringify({ message: msg })
         });
-        alert('Đã phát thông báo thành công!');
-        document.getElementById('broadcast-msg').value = '';
+        showToast('Đã phát thông báo toàn server!', 'success');
+        input.value = '';
       } catch (e) {
-        alert('Lỗi: ' + e.message);
+        showToast('Lỗi phát loa: ' + e.message, 'error');
       }
     }
 
-    async function giveEnergy(userId, name) {
-      const amountStr = prompt('Nhập số lượng Energy muốn tặng cho ' + name + ':', '1000');
+    // Quick Energy
+    async function quickEnergy(userId, name) {
+      const amountStr = prompt(`⚡ Nhập số lượng Năng Lượng muốn cấp cho [${name}]:`, '5000');
       if (!amountStr) return;
       const amount = parseInt(amountStr, 10);
-      if (isNaN(amount) || amount <= 0) return alert('Số lượng không hợp lệ');
+      if (isNaN(amount) || amount <= 0) return showToast('Số lượng không hợp lệ!', 'error');
 
       try {
         await apiCall('/api/admin/give', {
           method: 'POST',
-          body: JSON.stringify({ targetId: userId, type: 'energy', amount: amount })
+          body: JSON.stringify({ targetId: userId, type: 'energy', amount })
         });
-        alert('Tặng thành công!');
+        showToast(`Đã cộng ${amount.toLocaleString()} Năng lượng cho ${name}!`, 'success');
+        fetchUsers();
       } catch (e) {
-        alert('Lỗi: ' + e.message);
+        showToast('Lỗi: ' + e.message, 'error');
       }
     }
 
-    let currentTargetId = null;
-    let catalogData = [];
-    let currentCategory = 'Tất cả';
+    // Stats Modal
+    function openStatsModal(userId, name, level, xp, hp, maxHp, energy) {
+      document.getElementById('stats-target-id').value = userId;
+      document.getElementById('stats-target-name').textContent = name;
+      document.getElementById('stats-level').value = level;
+      document.getElementById('stats-xp').value = xp;
+      document.getElementById('stats-hp').value = hp;
+      document.getElementById('stats-max-hp-hint').textContent = `(Tối đa: ${maxHp})`;
+      document.getElementById('stats-energy').value = energy;
+      document.getElementById('stats-modal').style.display = 'grid';
+    }
 
-    async function giveItem(userId, name) {
-      currentTargetId = userId;
-      document.getElementById('gift-target-name').innerText = name;
-      document.getElementById('catalog-modal').style.display = 'block';
-      
-      if (catalogData.length === 0) {
+    function closeStatsModal() {
+      document.getElementById('stats-modal').style.display = 'none';
+    }
+
+    function fillFullHp() {
+      document.getElementById('stats-hp').value = 999999;
+      showToast('Đã đặt giá trị đầy HP', 'info');
+    }
+
+    async function savePlayerStats() {
+      const targetId = document.getElementById('stats-target-id').value;
+      const level = parseInt(document.getElementById('stats-level').value, 10);
+      const xp = parseInt(document.getElementById('stats-xp').value, 10);
+      const hp = parseInt(document.getElementById('stats-hp').value, 10);
+      const energy = parseInt(document.getElementById('stats-energy').value, 10);
+
+      try {
+        await apiCall('/api/admin/set-stats', {
+          method: 'POST',
+          body: JSON.stringify({
+            targetId,
+            level: isNaN(level) ? undefined : level,
+            xp: isNaN(xp) ? undefined : xp,
+            hp: isNaN(hp) ? undefined : hp,
+            energy: isNaN(energy) ? undefined : energy
+          })
+        });
+        showToast('Đã cập nhật chỉ số thành công!', 'success');
+        closeStatsModal();
+        fetchUsers();
+      } catch (e) {
+        showToast('Lỗi cập nhật: ' + e.message, 'error');
+      }
+    }
+
+    // Catalog Modal
+    async function openCatalogModal(userId, name) {
+      activeTargetId = userId;
+      document.getElementById('catalog-target-name').textContent = name;
+      document.getElementById('catalog-modal').style.display = 'grid';
+
+      if (catalogItems.length === 0) {
         try {
           const res = await apiCall('/api/admin/catalog');
-          catalogData = res.catalog;
+          catalogItems = res.catalog || [];
           renderCatalogTabs();
           renderCatalog();
         } catch (e) {
-          alert('Lỗi tải danh sách vật phẩm: ' + e.message);
+          showToast('Lỗi tải danh mục vật phẩm: ' + e.message, 'error');
         }
       } else {
         renderCatalog();
       }
     }
 
-    function closeCatalog() {
+    function closeCatalogModal() {
       document.getElementById('catalog-modal').style.display = 'none';
     }
 
     function renderCatalogTabs() {
-      const tabsDiv = document.getElementById('catalog-tabs');
-      tabsDiv.innerHTML = '';
-      
-      const categories = ['Tất cả', ...new Set(catalogData.map(i => i.category))].sort();
+      const bar = document.getElementById('catalog-tabs-bar');
+      bar.innerHTML = '';
+      const categories = ['Tất cả', ...new Set(catalogItems.map(i => i.category))].sort();
+
       categories.forEach(cat => {
         const btn = document.createElement('button');
-        btn.innerText = cat;
-        btn.style.cssText = `padding:6px 12px; border:none; border-radius:15px; cursor:pointer; background:${cat === currentCategory ? '#3498db' : '#ecf0f1'}; color:${cat === currentCategory ? '#fff' : '#333'}`;
+        btn.className = `cat-tab-btn ${cat === activeCatalogCategory ? 'active' : ''}`;
+        btn.textContent = cat;
         btn.onclick = () => {
-          currentCategory = cat;
+          activeCatalogCategory = cat;
           renderCatalogTabs();
           filterCatalog();
         };
-        tabsDiv.appendChild(btn);
-      });
-    }
-
-    function renderCatalog(filterText = '') {
-      const grid = document.getElementById('catalog-grid');
-      grid.innerHTML = '';
-      catalogData.forEach(item => {
-        if (currentCategory !== 'Tất cả' && item.category !== currentCategory) return;
-        const nameMatch = item.name && item.name.toLowerCase().includes(filterText);
-        const idMatch = item.id.toLowerCase().includes(filterText);
-        if (filterText && !nameMatch && !idMatch) return;
-        
-        const div = document.createElement('div');
-        div.style.cssText = 'border:1px solid #ddd; padding:10px; text-align:center; cursor:pointer; border-radius:4px; transition: 0.2s;';
-        div.innerHTML = `
-          ${item.icon ? `<img src="${item.icon}" style="width:48px; height:48px; object-fit:contain;" alt="${item.id}" />` : '<div style="height:48px;line-height:48px;color:#aaa;font-size:10px;">No Icon</div>'}
-          <div style="font-size:13px; margin-top:5px; word-wrap:break-word; font-weight:bold; color:#2c3e50;" title="${item.id}">${item.name || item.id}</div>
-        `;
-        div.onclick = () => selectItemToGift(item.id, item.name);
-        div.onmouseover = () => div.style.background = '#f8f9fa';
-        div.onmouseout = () => div.style.background = '#fff';
-        grid.appendChild(div);
+        bar.appendChild(btn);
       });
     }
 
     function filterCatalog() {
-      renderCatalog(document.getElementById('catalog-search').value.toLowerCase());
+      const query = document.getElementById('catalog-search').value.toLowerCase().trim();
+      renderCatalog(query);
     }
 
-    async function selectItemToGift(itemId, name) {
-      const amountStr = prompt(`Nhập số lượng '${name}' muốn tặng:`, '1');
-      if (!amountStr) return;
-      const amount = parseInt(amountStr, 10);
-      if (isNaN(amount) || amount <= 0) return alert('Số lượng không hợp lệ');
+    function renderCatalog(query = '') {
+      const grid = document.getElementById('catalog-grid');
+      grid.innerHTML = '';
+
+      const items = catalogItems.filter(item => {
+        if (activeCatalogCategory !== 'Tất cả' && item.category !== activeCatalogCategory) return false;
+        if (query) {
+          const nameMatch = (item.name || '').toLowerCase().includes(query);
+          const idMatch = item.id.toLowerCase().includes(query);
+          if (!nameMatch && !idMatch) return false;
+        }
+        return true;
+      });
+
+      if (items.length === 0) {
+        grid.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 40px;">Không có vật phẩm nào phù hợp.</div>`;
+        return;
+      }
+
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'catalog-item-card';
+        card.innerHTML = `
+          ${item.icon ? `<img src="${item.icon}" alt="${item.id}" loading="lazy">` : `<div style="width:50px; height:50px; display:grid; place-items:center; font-size:24px;">📦</div>`}
+          <div class="item-name" title="${escapeHtml(item.name || item.id)}">${escapeHtml(item.name || item.id)}</div>
+          <div class="item-id">${item.id}</div>
+        `;
+        card.onclick = () => promptGiftItem(item.id, item.name || item.id);
+        grid.appendChild(card);
+      });
+    }
+
+    async function promptGiftItem(itemId, itemName) {
+      const countStr = prompt(`🎁 Nhập số lượng [${itemName}] muốn tặng:`, '1');
+      if (!countStr) return;
+      const count = parseInt(countStr, 10);
+      if (isNaN(count) || count <= 0) return showToast('Số lượng không hợp lệ!', 'error');
 
       try {
         await apiCall('/api/admin/give', {
           method: 'POST',
-          body: JSON.stringify({ targetId: currentTargetId, type: 'item', itemId: itemId, amount: amount })
+          body: JSON.stringify({
+            targetId: activeTargetId,
+            type: 'item',
+            itemId,
+            amount: count
+          })
         });
-        alert('Tặng vật phẩm thành công!');
-        closeCatalog();
+        showToast(`Đã gửi tặng x${count} [${itemName}] thành công!`, 'success');
+        closeCatalogModal();
+        fetchUsers();
       } catch (e) {
-        alert('Lỗi: ' + e.message);
+        showToast('Lỗi gửi vật phẩm: ' + e.message, 'error');
       }
     }
 
+    // Startup check
     checkSession();
   </script>
 </body>

@@ -12,15 +12,17 @@ import {trailSpot,dogTossFactor,DOG_TOSS_CD} from '../src/guard-dog.ts';
 import {commandHash} from './action-service.mjs';
 import {gearFactor,skillLevel,skillCooldown} from '../src/upgrades.ts';
 import {clearJourney} from './adventure-lifecycle.mjs';
+import {createArena} from './arena.mjs';
 
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 const finite=(value,fallback=0,min=-160,max=160)=>Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;
-const snapshot=enemy=>{const {roster,home,changedAt,deadUntil,generation,pending,contributors,scaled,damageAt,cast,nextCastAt,hostPhase,hostAttackCount,combatAttacks,lastHitAt,...publicState}=enemy;return {...publicState,chaseGrace:Math.max(0,Math.min(4,((lastHitAt||0)+4000-Date.now())/1000))};};
+const snapshot=enemy=>{const {roster,home,changedAt,deadUntil,generation,pending,contributors,damageTotals,contributionEpochs,scaled,damageAt,cast,nextCastAt,hostPhase,hostAttackCount,combatAttacks,lastHitAt,...publicState}=enemy;return {...publicState,chaseGrace:Math.max(0,Math.min(4,((lastHitAt||0)+4000-Date.now())/1000))};};
 const STATUS=['fear','charm','slow','blind','sheep','taunt'];
 
 /** The browser host animates navigation; the server owns HP, skill timing, stats, kills and rewards. */
-export function createCombatAuthority({store,peers,rooms,remember,send,broadcast,onDeath=()=>{},onError=()=>{}}){
+export function createCombatAuthority({store,peers,rooms,remember,send,broadcast,onDeath=()=>{},onError=()=>{},onWorldBossDefeat=()=>{}}){
   const engines=new Map(),queues=new Map();let stopped=false;
+  const arena=createArena({peers,rooms,send,broadcast,commit:internal,onLeave:peer=>engines.get(peer.account.id)?.sim.reset(),immune:peer=>engineFor(peer).sim.invulnerable});
   function queue(id,task){const next=(queues.get(id)||Promise.resolve()).catch(()=>{}).then(task);queues.set(id,next);return next;}
   async function internal(actorId,type,relatedIds,run,requestId=randomUUID()){
     return queue(actorId,async()=>{
@@ -48,7 +50,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     room.enemies=[...state(room).enemies.values()].map(snapshot);
   }
   function health(room,enemy,impact){publish(room);broadcast(room,{...snapshot(enemy),type:'enemyHealth',enemyType:enemy.type,impact,...(impact?{impactId:randomUUID()}:{})});}
-  const aliveTargets=room=>[...room.members].map(id=>peers.get(id)).filter(p=>p&&p.active&&!p.visit&&p.account.profile.hp>0&&dist(p.pose,{x:0,z:0})>=(p.planet==='home'?18:11));
+  const aliveTargets=room=>[...room.members].map(id=>peers.get(id)).filter(p=>p&&p.active&&!p.visit&&!arena.has(p)&&p.account.profile.hp>0&&dist(p.pose,{x:0,z:0})>=(p.planet==='home'?18:11));
   const randomFor=seed=>()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   function observeCast(room,enemy,raw,now){
     const previousPhase=enemy.hostPhase,previousCount=enemy.hostAttackCount;enemy.hostPhase=raw.phase;enemy.hostAttackCount=raw.attackCount;
@@ -69,7 +71,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     (enemy.combatAttacks??=[]).push(enemy.cast);enemy.nextCastAt=now+(windup+cooldown)*1000;
   }
   function hurtPlayer(peer,amount,source='melee'){
-    const e=engineFor(peer),now=Date.now();if(peer.visit||!peer.active||peer.account.profile.hp<=0||now-e.damageAt<550||e.sim.invulnerable||source==='melee'&&e.sim.statuses.flight>0)return;
+    const e=engineFor(peer),now=Date.now();if(arena.has(peer)||peer.visit||!peer.active||peer.account.profile.hp<=0||now-e.damageAt<550||e.sim.invulnerable||source==='melee'&&e.sim.statuses.flight>0)return;
     e.damageAt=now;const defense=Game.defense(combatProfile(peer))+e.sim.defenseBonus+(e.sim.statuses.armor>0?80:0);hp(peer,-Math.max(1,Math.round(amount*60/(defense+60))),source);
   }
   function hurtEnemyTarget(peer,enemy,multiplier,source='melee'){hurtPlayer(peer,enemy.damage*multiplier,source);}
@@ -149,33 +151,40 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
   }
   function kill(room,enemy,killer,execute=false){
     if(enemy.pending)return;enemy.pending=true;const now=Date.now(),requestId=randomUUID(),killPoint={x:enemy.x,z:enemy.z},killerEpoch=epoch(killer.account),contributorEpochs=new Map([...room.members].map(id=>[id,peers.get(id)?.account.adventureEpoch||0]));
-    const contributors=[...enemy.contributors].filter(([id,at])=>now-at<30000&&room.members.has(id)&&peers.get(id)?.planet===state(room).planet).map(([id])=>id);
+    const contributors=enemy.worldBoss?[...enemy.damageTotals.keys()]:[...enemy.contributors].filter(([id,at])=>now-at<30000&&room.members.has(id)&&peers.get(id)?.planet===state(room).planet).map(([id])=>id);
+    if(enemy.worldBoss)for(const [id,value]of enemy.contributionEpochs)contributorEpochs.set(id,value);
     if(!contributors.includes(killer.account.id))contributors.push(killer.account.id);
     internal(killer.account.id,'combatKill',contributors,records=>{
       // The Hard bonus follows the room's creatures (the host's scale), not each contributor's own setting.
-      let loot=[];const bonus=Game.scaleReward(state(room).scale);
+      let loot=[];const bonus=Game.scaleReward(state(room).scale),xpById={};
       for(const id of contributors){const account=records.get(id);if(!account||(account.adventureEpoch||0)!==contributorEpochs.get(id))continue;const profile=Game.parseSave(JSON.stringify(account.profile));if(!profile)continue;
-        const rolled=Game.grantDefeat(profile,enemy.type,enemy.roster.xp,enemy.boss,Math.random,false,bonus);if(id===killer.account.id)loot=rolled;
+        xpById[id]=enemy.roster.xp*(1+Game.activeStats(profile).xp)*bonus;
+        const rolled=Game.grantDefeat(profile,enemy.type,enemy.roster.xp,enemy.boss,Math.random,false,bonus);
+        if(enemy.worldBoss){for(const item of rolled)profile.chest[item.id]=(profile.chest[item.id]||0)+item.count;profile.chest.starshard=(profile.chest.starshard||0)+3;profile.energy+=1000;}
+        else if(id===killer.account.id)loot=rolled;
         if(execute&&id===killer.account.id&&(account.lifeEpoch||0)===killerEpoch.life)profile.hp=Math.min(Game.maxHp(profile),profile.hp+Game.maxHp(profile)*.25);
         account.profile=profile;
       }
-      const owner=records.get(killer.account.id);if(!owner||(owner.adventureEpoch||0)!==killerEpoch.adventure)return {enemyId:enemy.id,drops:[],execute:false};owner.drops=(owner.drops||[]).filter(d=>d.expiresAt>now);
+      const owner=records.get(killer.account.id);if(!owner||(owner.adventureEpoch||0)!==killerEpoch.adventure)return {enemyId:enemy.id,drops:[],execute:false,xpById};owner.drops=(owner.drops||[]).filter(d=>d.expiresAt>now);
       const drops=loot.map(item=>({id:randomUUID(),ownerId:owner.id,item:item.id,count:item.count,room:room.id,planet:state(room).planet,x:killPoint.x,z:killPoint.z,owner:owner.id,releaseAt:now+10000,expiresAt:now+30000}));owner.drops.push(...drops);
-      return {enemyId:enemy.id,drops,execute};
+      return {enemyId:enemy.id,drops,execute,xpById};
     },requestId).then(committed=>{
       if(!committed)throw new Error('Missing killer');enemy.pending=false;enemy.hp=0;enemy.deadUntil=Date.now()+enemy.roster.respawn*1000;enemy.respawn=enemy.roster.respawn;enemy.titanAttacks=[];enemy.shots=[];enemy.skillEffects=[];enemy.telegraphs=[];enemy.combatAttacks=[];enemy.cast=null;
-      room.killed.add(enemy.id);health(room,enemy);broadcast(room,{type:'defeat',id:enemy.id,by:contributors,eventId:requestId});
+      room.killed.add(enemy.id);health(room,enemy);broadcast(room,{type:'defeat',id:enemy.id,by:contributors,eventId:requestId,x:killPoint.x,z:killPoint.z,enemyType:enemy.type,boss:enemy.boss,xpById:committed.reply.result.xpById});
       for(const drop of committed.reply.result.drops)broadcast(room,{type:'dropSpawn',drop});
+      if(enemy.worldBoss)onWorldBossDefeat(enemy.id,[...enemy.damageTotals].map(([id,damage])=>({id,name:peers.get(id)?.account.profile.name||id,damage:Math.round(damage)})).sort((a,b)=>b.damage-a.damage));
       if(execute&&committed.reply.result.execute)send((peers.get(killer.account.id)||killer).socket,{type:'executeResult',id:enemy.id,requestId,ok:true,profile:committed.reply.profile,revision:committed.reply.revision});
       if(enemy.type==='magmaslime')for(const [i,minion] of [...state(room).enemies.values()].filter(e=>e.type==='minislime'&&e.hp<=0&&!e.pending).slice(0,3).entries()){minion.x=enemy.x+Math.cos(i*Math.PI*2/3)*.9;minion.z=enemy.z+Math.sin(i*Math.PI*2/3)*.9;minion.hp=minion.maxHp;minion.deadUntil=0;minion.respawn=0;minion.generation++;health(room,minion);}
     }).catch(()=>{enemy.pending=false;enemy.hp=Math.max(1,enemy.hp);health(room,enemy);send(killer.socket,{type:'error',message:'The reward could not be saved. Please try again.'});});
   }
   function hit(peer,enemy,impact,execute=false,hazard=false){
+    if(enemy.id.startsWith('arena:'))return arena.hit(peer,enemy,impact);
+    if(arena.has(peer))return 0;
     const room=rooms.get(peer.room);if(!room||peer.visit||enemy.hp<=0||enemy.pending)return 0;
     if(!enemy.scaled&&enemy.boss){const players=[...room.members].map(id=>peers.get(id)).filter(p=>p&&!p.visit&&dist(p.pose,enemy)<28),level=Math.max(...players.map(p=>p.account.profile.level),1),difference=Math.max(0,level-enemy.roster.level);enemy.maxHp=Math.round(enemy.baseMaxHp*(1+.6*Math.max(0,players.length-1))*(enemy.type==='dragon'?1:1+difference*.12));enemy.hp=enemy.maxHp;enemy.damage=enemy.baseDamage*(enemy.type==='dragon'?1:(1+difference*.07)*(1+.1*Math.max(0,players.length-1)));enemy.scaled=true;}
     const control=hitControl(enemy.boss,impact.stun||0);
     if(!hazard&&!execute&&enemy.type==='magmaturtle')impact={...impact,amount:impact.amount*(enemy.phase==='recover'?2:.12)};
-    const dealt=Math.min(enemy.hp,Math.max(0,impact.amount));enemy.contributors.set(peer.account.id,Date.now());enemy.lastHitAt=Date.now();enemy.hp-=dealt;enemy.stun=Math.max(enemy.stun||0,control.stun);
+    const dealt=Math.min(enemy.hp,Math.max(0,impact.amount));enemy.contributors.set(peer.account.id,Date.now());if(enemy.worldBoss&&dealt>0){enemy.damageTotals.set(peer.account.id,(enemy.damageTotals.get(peer.account.id)||0)+dealt);enemy.contributionEpochs.set(peer.account.id,peer.account.adventureEpoch||0);}enemy.lastHitAt=Date.now();enemy.hp-=dealt;enemy.stun=Math.max(enemy.stun||0,control.stun);
     if(control.slow)enemy.statuses.slow=Math.max(enemy.statuses.slow||0,control.slow);
     if(impact.lift>0){enemy.liftVelocity=Math.max(enemy.liftVelocity||0,Math.sqrt(liftHeight(enemy.boss,impact.lift)*24));enemy.stun=Math.max(enemy.stun||0,.8);enemy.phase='chase';enemy.telegraphs=[];enemy.combatAttacks=(enemy.combatAttacks??[]).filter(c=>c.attack||c.elapsed>0);enemy.cast=enemy.combatAttacks.at(-1)??null;}
     if(enemy.hp<=0){enemy.hp=1;kill(room,enemy,peer,execute);}health(room,enemy,impact);return dealt;
@@ -225,21 +234,21 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     }
     engine={peer,room:peer.room,planet:peer.planet,lastSeen:Date.now(),nextBasic:0,nextSkill:[0,0,0,0],healthEvents:[],hpAt:0,damageAt:0,lastSkill:new Map(),environment:new EnvironmentSimulation(createEnvironmentLayout(peer.planet))};
     const current=()=>engine.peer,room=()=>rooms.get(current().room);
-    const targets=()=>room()?[...state(room()).enemies.values()]:[];
+    const targets=()=>arena.has(current())?arena.targets(current()):room()?[...state(room()).enemies.values()]:[];
     engine.sim=new CombatSimulation({position:()=>current().pose,facing:()=>current().pose.facing,face:a=>{current().pose.facing=a;},targets,
       weapon:()=>{const weapon=Game.weaponStats(combatProfile(current()));return weapon.kind==='rod'?{kind:'fist',range:1.6,cd:.5,special:'fist'}:weapon;},
       stats:()=>Game.activeStats(combatProfile(current())),moving:()=>current().pose.moving,
       move:(x,z)=>{current().pose.x+=x;current().pose.z+=z;},hit:(target,impact)=>hit(current(),target,impact),
-      heal:fraction=>hp(current(),Game.maxHp(current().account.profile)*fraction,'heal'),
+      heal:fraction=>{if(arena.has(current()))arena.heal(current(),fraction);else hp(current(),Game.maxHp(current().account.profile)*fraction,'heal');},
       execute:target=>{const p=current();if(!target.boss&&target.hp/target.maxHp<.4&&dist(p.pose,target)<=3.2+target.radius)hit(p,target,{amount:target.hp,critical:true,stun:0,lift:0,knock:0,direction:{x:0,z:0}},true);},
       effect:effect=>{if(room())broadcast(room(),{type:'effect',by:current().account.id,visual:effect},current().account.id);},
       // The pet waits by the pen at home (pet-pen.ts petMayFight): it shoots only while its explorer is away from the safe village.
-      pet:()=>{const p=current(),id=p.account.profile.gear.pet,pet=Game.ITEMS[id]?.pet;return pet&&!p.visit&&!atHome(p.planet,p.pose)?{...pet,dmg:pet.dmg*gearFactor(p.account.profile,id),x:p.pose.x,z:p.pose.z}:null;},
+      pet:()=>{const p=current(),id=p.account.profile.gear.pet,pet=Game.ITEMS[id]?.pet;return pet&&!arena.has(p)&&!p.visit&&!atHome(p.planet,p.pose)?{...pet,dmg:pet.dmg*gearFactor(p.account.profile,id),x:p.pose.x,z:p.pose.z}:null;},
       // The guard dog throws only while the server says it follows (pose.dog is null at home and on visits); it stands at the trailing spot.
-      dog:()=>{const p=current();if(p.visit||typeof p.pose?.dog!=='number'||atHome(p.planet,p.pose))return null;const at=trailSpot(p.pose,p.pose.facing||0);return {x:at.x,z:at.z,dmg:dogTossFactor(p.account.profile.level),cd:DOG_TOSS_CD,target:p.target??null};},
+      dog:()=>{const p=current();if(arena.has(p)||p.visit||typeof p.pose?.dog!=='number'||atHome(p.planet,p.pose))return null;const at=trailSpot(p.pose,p.pose.facing||0);return {x:at.x,z:at.z,dmg:dogTossFactor(p.account.profile.level),cd:DOG_TOSS_CD,target:p.target??null};},
       skillLevel:index=>skillLevel(combatProfile(current()),index),
-      status:(target,kind,duration)=>{if(target.boss&&BOSS_RESISTED.includes(kind)){kind='slow';duration*=RESIST_SLOW;}target.statuses[kind]=Math.max(target.statuses[kind]||0,duration);if(room())broadcast(room(),{type:'status',id:target.id,kind,duration});},
-      moveTarget:(target,x,z)=>{if(dist(target,{x,z})>12)return;target.x=x;target.z=z;if(room())broadcast(room(),{type:'moveEnemy',id:target.id,x,z});}});
+      status:(target,kind,duration)=>{if(target.id.startsWith('arena:')){arena.control(current(),target,kind,duration);return;}if(target.boss&&BOSS_RESISTED.includes(kind)){kind='slow';duration*=RESIST_SLOW;}target.statuses[kind]=Math.max(target.statuses[kind]||0,duration);if(room())broadcast(room(),{type:'status',id:target.id,kind,duration});},
+      moveTarget:(target,x,z)=>{if(target.id.startsWith('arena:')||dist(target,{x,z})>12)return;target.x=x;target.z=z;if(room())broadcast(room(),{type:'moveEnemy',id:target.id,x,z});}});
     engines.set(peer.account.id,engine);return engine;
   }
   function resetPeer(peer,{newLife=false,reason}={}){
@@ -263,6 +272,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
   }
   function environmentSnapshot(env){return {time:env.time,lamps:[...env.lamps],eclipseUntil:env.eclipseUntil,nestLevel:env.nestLevel,fireRain:env.fireRain,lightning:env.lightning,weather:env.weather.snapshot()};}
   function tick(dt=.05){
+    arena.tick();
     const now=Date.now();
     for(const room of rooms.values()){
       const s=state(room),active=[...room.members].map(id=>peers.get(id)).filter(p=>p&&p.active&&!p.visit),actors=[...s.enemies.values()].map(e=>({id:e.id,x:e.x,z:e.z,hp:e.hp,maxHp:e.maxHp,boss:e.boss,flying:ENEMY_TYPES[e.type].flying,lavaImmune:e.type==='lavaworm'}));
@@ -276,7 +286,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
         if(contributor)hit(contributor,enemy,{amount:strike.amount,critical:false,stun:0,lift:0,knock:0,direction:{x:0,z:0}},false,true);
         else{enemy.hp=Math.max(0,enemy.hp-strike.amount);if(enemy.hp===0){enemy.deadUntil=now+enemy.roster.respawn*1000;enemy.respawn=enemy.roster.respawn;enemy.shots=[];enemy.titanAttacks=[];enemy.combatAttacks=[];enemy.cast=null;}health(room,enemy);}
       }
-      const dragon=[...s.enemies.values()].find(e=>e.type==='dragon');if(dragon&&step.dragonSummon){dragon.hp=dragon.maxHp;dragon.deadUntil=0;dragon.respawn=0;dragon.statuses={};dragon.stun=0;dragon.phase='idle';dragon.cast=null;dragon.combatAttacks=[];health(room,dragon);}if(dragon&&step.dragonDismiss){dragon.hp=0;dragon.deadUntil=Infinity;dragon.respawn=999999;dragon.cast=null;dragon.combatAttacks=[];dragon.titanAttacks=[];dragon.shots=[];dragon.skillEffects=[];dragon.telegraphs=[];health(room,dragon);}
+      const dragon=[...s.enemies.values()].find(e=>e.type==='dragon'&&!e.worldBoss);if(dragon&&step.dragonSummon){dragon.hp=dragon.maxHp;dragon.deadUntil=0;dragon.respawn=0;dragon.statuses={};dragon.stun=0;dragon.phase='idle';dragon.cast=null;dragon.combatAttacks=[];health(room,dragon);}if(dragon&&step.dragonDismiss){dragon.hp=0;dragon.deadUntil=Infinity;dragon.respawn=999999;dragon.cast=null;dragon.combatAttacks=[];dragon.titanAttacks=[];dragon.shots=[];dragon.skillEffects=[];dragon.telegraphs=[];health(room,dragon);}
       for(const enemy of s.enemies.values()){
         if(enemy.hp>0&&!enemy.pending&&enemy.phase==='return'&&now-(enemy.lastHitAt||0)>4000){enemy.hp=Math.min(enemy.maxHp,enemy.hp+enemy.maxHp*.3*dt);if(enemy.hp===enemy.maxHp)enemy.scaled=false;}
         updateCast(room,enemy,dt,now);
@@ -288,7 +298,7 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
       for(const peer of active){const e=engineFor(peer);e.sim.update(dt,true);e.environment.authoritative=false;e.environment.time=s.environment.time-dt;e.environment.weather.restore(weatherBefore);e.environment.fireRain=structuredClone(rainBefore);e.environment.lightning=structuredClone(lightningBefore);e.environment.lamps=new Map(s.environment.lamps);e.environment.eclipseUntil=s.environment.eclipseUntil;e.environment.dragonPhase=s.environment.dragonPhase;e.environment.nestLevel=before.nestLevel;
         if(peer.account.ridePlanet===peer.planet&&peer.account.rideUntil>now)e.environment.rideUntil=e.environment.time+(peer.account.rideUntil-now)/1000;
         const traits=Game.activeStats(peer.account.profile),hazard=e.environment.step(dt,peer.pose,{x:0,z:0},{...traits,fireResistance:traits.lavaproof?1:traits.fireResistance,flying:e.sim.statuses.flight>0||e.sim.statuses.bats>0},[]);
-        if(hazard.damage>0)hurtPlayer(peer,hazard.damage,'hazard');if(hazard.heal)hp(peer,hazard.heal,'heal');if(traits.regen>0&&peer.account.profile.hp<traits.maxHp)hp(peer,traits.regen*dt,'regen');if(atHome(peer.planet,peer.pose)&&peer.account.profile.hp<traits.maxHp)hp(peer,homeRecoveryBonus(traits.regen)*dt,'rest');
+        if(!arena.has(peer)){if(hazard.damage>0)hurtPlayer(peer,hazard.damage,'hazard');if(hazard.heal)hp(peer,hazard.heal,'heal');if(traits.regen>0&&peer.account.profile.hp<traits.maxHp)hp(peer,traits.regen*dt,'regen');if(atHome(peer.planet,peer.pose)&&peer.account.profile.hp<traits.maxHp)hp(peer,homeRecoveryBonus(traits.regen)*dt,'rest');}
 
       }
     }
@@ -308,5 +318,13 @@ export function createCombatAuthority({store,peers,rooms,remember,send,broadcast
     return changed;
   }
   function bomb(peer,radius,multiplier){const room=rooms.get(peer.room);if(!room||peer.visit)return;for(const enemy of state(room).enemies.values())if(enemy.hp>0&&dist(peer.pose,enemy)<=radius+enemy.radius)hit(peer,enemy,{amount:Math.round(Game.attack(combatProfile(peer))*multiplier),critical:false,stun:.5,lift:0,knock:2,direction:{x:0,z:0}});}
-  return {acceptSnapshots,activeSnapshots,basic,skill,damage,bomb,engineFor,state,internal,resetPeer,flushPeerHealth,async close(){stopped=true;clearInterval(timer);for(const engine of engines.values())flushHealth(engine);await Promise.allSettled([...queues.values()]);}};
+  function spawnWorldBoss(room,event){
+    const s=state(room);rescale(room,s);const d=ENEMY_TYPES[event.type];
+    const hp = Number(event.hp) > 0 ? Number(event.hp) : (d.hp * 8);
+    const roster={id:event.id,type:event.type,index:10000,zone:s.planet,baseMaxHp:hp,baseDamage:d.damage*1.5,xp:d.xp*4,level:30,radius:d.radius*1.8,boss:true,titan:!!d.titan,dormant:false,respawn:999999};
+    s.roster.set(event.id,roster);
+    s.enemies.set(event.id,{...roster,roster,worldBoss:true,visualScale:1.8,baseMaxHp:roster.baseMaxHp,baseDamage:roster.baseDamage,home:{x:event.x,z:event.z},x:event.x,z:event.z,hp:roster.baseMaxHp,maxHp:roster.baseMaxHp,damage:roster.baseDamage,respawn:0,deadUntil:Infinity,generation:0,contributors:new Map(),damageTotals:new Map(),contributionEpochs:new Map(),changedAt:Date.now(),statuses:{},shots:[],phase:'idle',scaled:true});health(room,s.enemies.get(event.id));
+  }
+  function dismissWorldBoss(room,id){const enemy=state(room).enemies.get(id);if(!enemy||enemy.pending)return;enemy.hp=0;enemy.deadUntil=Infinity;enemy.respawn=999999;enemy.combatAttacks=[];enemy.cast=null;enemy.shots=[];enemy.telegraphs=[];health(room,enemy);}
+  return {arena,spawnWorldBoss,dismissWorldBoss,acceptSnapshots,activeSnapshots,basic,skill,damage,bomb,engineFor,state,internal,resetPeer,flushPeerHealth,async close(){stopped=true;clearInterval(timer);for(const engine of engines.values())flushHealth(engine);await Promise.allSettled([...queues.values()]);}};
 }

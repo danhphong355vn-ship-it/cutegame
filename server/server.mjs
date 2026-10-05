@@ -12,6 +12,7 @@ import { lookOf } from '../src/looks.ts';
 import { createAccountStore } from './account-store.mjs';
 import { createActionService } from './action-service.mjs';
 import { createCombatAuthority } from './combat-authority.mjs';
+import { createWorldEvents } from './world-events.mjs';
 import { EFFECT_LOOKS } from '../src/combat.ts';
 import { INDOOR_Y } from '../src/house.ts';
 import { rememberAccount } from './account-cache.mjs';
@@ -72,7 +73,7 @@ export async function createGameServer(options = {}) {
     const now = Date.now(), previous = limits.get(key);
     const entry = previous && now - previous.at < period ? previous : { at: now, count: 0 };
     entry.count++; limits.set(key, entry);
-    if (entry.count > maximum) throw failure(429, 'Please wait a moment before trying again.');
+    if (entry.count > maximum) throw Object.assign(failure(429, 'Please wait a moment before trying again.'), { retryAfterMs: Math.max(1, entry.at + period - now) });
   }
   function validSession(request) {
     const token = cookieValue(request), session = token && sessions.get(token);
@@ -132,7 +133,8 @@ export async function createGameServer(options = {}) {
   }
   function visibleDrop(peer,drop){const space=drop.space||(drop.planet==='home'&&Math.hypot(drop.x,drop.z)<18?`home:${drop.ownerId}`:'wild');return !peer.visit&&drop.room===peer.room&&drop.planet===peer.planet&&(space==='wild'||space===`home:${peer.account.id}`);}
   function respawn(peer){if(peer.visit)endVisit(peer);join(peer,'home',peer.party);peer.pose={...peer.pose,x:0,z:-4.8};}
-  const combatAuthority=createCombatAuthority({store,peers,rooms,remember,send,broadcast,onDeath:respawn});
+  const combatAuthority=createCombatAuthority({store,peers,rooms,remember,send,broadcast,onDeath:respawn,onWorldBossDefeat:(id,ranking)=>worldEvents.finish(id,ranking)});
+  const worldEvents=createWorldEvents({rooms,peers,combat:combatAuthority,send});
   const executeAction = createActionService({store,getPeer:id=>peers.get(id),getWorld:id=>rooms.has(id)?combatAuthority.state(rooms.get(id)):null,afterCommit:async(committed,intent)=>{
     committed.accounts.forEach(remember);
     if(committed.reply.replayed)return;
@@ -171,7 +173,8 @@ export async function createGameServer(options = {}) {
     if (!room) return;
     room.members.delete(peer.account.id);
     broadcast(room, { type: 'leave', id: peer.account.id });
-    if (!room.members.size) rooms.delete(room.id); else elect(room);
+    combatAuthority.arena.leave(peer);
+    if (!room.members.size&&!room.worldEvent) rooms.delete(room.id); else elect(room);
     peer.room = null;
   }
   function join(peer, planet = 'home', party = null, visitId = null, refresh = false) {
@@ -186,7 +189,7 @@ export async function createGameServer(options = {}) {
       return;
     }
     const existing = rooms.get(key);
-    if (existing?.members.size >= 24) throw failure(409, 'This world is full. Join a private party to play together.');
+    if (existing?.members.size >= (existing?.worldEvent?64:24)) throw failure(409, 'This world is full. Join a private party to play together.');
     leave(peer);
     const room = existing || { id: key, members: new Set(), host: null, enemies: [], environment:null, requests:new Map(), epoch: 0, killed: new Set(), contributors: new Map(), lastSnapshot: 0 };
     rooms.set(key, room); room.members.add(peer.account.id);
@@ -236,9 +239,35 @@ export async function createGameServer(options = {}) {
 
     if (route.startsWith('admin/')) {
       if (!account || !account.isAdmin) throw failure(403, 'Admin access required.');
+      if(route==='admin/world-boss'&&method==='GET')return respond(response,200,worldEvents.status());
+      if(route==='admin/world-boss'&&method==='POST'){const data=await body(request);return respond(response,200,worldEvents.summon(data));}
+      if(route==='admin/world-boss/dismiss'&&method==='POST')return respond(response,200,worldEvents.dismiss());
+      if(route==='admin/pvp'&&method==='GET')return respond(response,200,{enabled:combatAuthority.arena?.enabled!==false,goldenHour:!!combatAuthority.arena?.goldenHour});
+      if(route==='admin/pvp/toggle'&&method==='POST'){
+        combatAuthority.arena.enabled=!combatAuthority.arena.enabled;
+        const msg=combatAuthority.arena.enabled?'⚔️ Đấu Trường PvP đã được MỞ CỬA!':'🛡️ Đấu Trường PvP đã tạm thời ĐÓNG CỬA!';
+        for(const peer of peers.values())send(peer.socket,{type:'chat',id:'admin',name:'HỆ THỐNG',message:msg,at:Date.now()});
+        return respond(response,200,{enabled:combatAuthority.arena.enabled});
+      }
+      if(route==='admin/pvp/golden-hour'&&method==='POST'){
+        combatAuthority.arena.goldenHour=!combatAuthority.arena.goldenHour;
+        const msg=combatAuthority.arena.goldenHour?'🔥 GIỜ VÀNG ĐẤU TRƯỜNG PVP ĐÃ BẮT ĐẦU! (x2 Phần Thưởng)':'⌛ Giờ vàng Đấu Trường PvP đã kết thúc.';
+        for(const peer of peers.values())send(peer.socket,{type:'chat',id:'admin',name:'HỆ THỐNG',message:msg,at:Date.now()});
+        return respond(response,200,{goldenHour:combatAuthority.arena.goldenHour});
+      }
       if (route === 'admin/users' && method === 'GET') {
         const users = await store.list();
-        return respond(response, 200, { users: users.map(u => ({ id: u.id, username: u.username, isAdmin: u.isAdmin, profile: u.profile })) });
+        return respond(response, 200, {
+          users: users.map(u => ({
+            id: u.id,
+            username: u.username,
+            isAdmin: u.isAdmin,
+            isOnline: peers.has(u.id),
+            planet: peers.get(u.id)?.planet || u.profile?.planet || 'home',
+            maxHp: Game.maxHp(u.profile),
+            profile: u.profile
+          }))
+        });
       }
       if (route === 'admin/catalog' && method === 'GET') {
         const { VI_CATALOG } = await import('../src/locales/vi-catalog.ts');
@@ -296,6 +325,119 @@ export async function createGameServer(options = {}) {
         if (peer) send(peer.socket, { type: 'profile', profile: updated.profile, revision: updated.profileRevision, authorityVersion: 1 });
         
         return respond(response, 200, { ok: true });
+      }
+      if (route === 'admin/set-stats' && method === 'POST') {
+        const data = await body(request);
+        const target = await store.get(data.targetId);
+        if (!target) throw failure(404, 'User not found');
+        
+        await store.command({
+          actorId: target.id,
+          requestId: 'admin-stats-' + Date.now(),
+          hash: '0000000000000000000000000000000000000000000000000000000000000000',
+          expectedRevision: target.profileRevision || 0,
+          run: async (records) => {
+            const t = records.get(target.id);
+            if (typeof data.level === 'number' && data.level >= 1) {
+              t.profile.level = Math.floor(data.level);
+            }
+            if (typeof data.xp === 'number' && data.xp >= 0) {
+              t.profile.xp = Math.floor(data.xp);
+            }
+            if (data.fillHp) {
+              t.profile.hp = Game.maxHp(t.profile);
+            } else if (typeof data.hp === 'number' && data.hp >= 1) {
+              t.profile.hp = Math.floor(data.hp);
+            }
+            if (typeof data.energy === 'number' && data.energy >= 0) {
+              t.profile.energy = Math.floor(data.energy);
+            }
+            return { ok: true };
+          }
+        });
+        
+        const updated = await store.get(target.id);
+        const peer = peers.get(target.id);
+        if (peer) {
+          send(peer.socket, { type: 'profile', profile: updated.profile, revision: updated.profileRevision, authorityVersion: 1 });
+          const room = rooms.get(peer.room);
+          if (room) broadcast(room, { type: 'pose', player: presence(peer) }, peer.account.id);
+        }
+        
+        return respond(response, 200, { ok: true, profile: updated.profile });
+      }
+      if (route === 'admin/teleport-all' && method === 'POST') {
+        const data = await body(request);
+        const planet = data.planet || 'lava', x = Number(data.x) || -36, z = Number(data.z) || 36;
+        let count = 0;
+        for (const peer of peers.values()) {
+          peer.pose = { ...peer.pose, x, z };
+          join(peer, planet, peer.party, null, true);
+          send(peer.socket, { type: 'chat', id: 'admin', name: 'HỆ THỐNG', message: `🛸 Bạn đã được Admin triệu tập đến ${planet==='lava'?'Đảo Núi Lửa':planet==='home'?'Đồng Cỏ Hồ Xanh':planet}!`, at: Date.now() });
+          count++;
+        }
+        return respond(response, 200, { ok: true, count });
+      }
+      if (route === 'admin/teleport' && method === 'POST') {
+        const data = await body(request);
+        const peer = peers.get(data.targetId);
+        const planet = data.planet || 'home', x = Number(data.x) || 0, z = Number(data.z) || (planet === 'home' ? 0 : 9);
+        const target = await store.get(data.targetId);
+        if (target) {
+          await store.command({
+            actorId: target.id,
+            requestId: 'admin-tp-' + Date.now(),
+            hash: '0000000000000000000000000000000000000000000000000000000000000000',
+            expectedRevision: target.profileRevision || 0,
+            run: async (records) => {
+              const t = records.get(target.id);
+              t.profile.planet = planet;
+              return { ok: true };
+            }
+          });
+        }
+        if (peer) {
+          peer.pose = { ...peer.pose, x, z };
+          join(peer, planet, peer.party, null, true);
+          send(peer.socket, { type: 'chat', id: 'admin', name: 'HỆ THỐNG', message: `🛸 Bạn đã được Admin dịch chuyển đến ${planet==='home'?'Nhà':planet}!`, at: Date.now() });
+        }
+        return respond(response, 200, { ok: true });
+      }
+      if (route === 'admin/mass-reward' && method === 'POST') {
+        const data = await body(request);
+        const type = data.type || 'energy', amount = Number(data.amount) || 1, itemId = data.itemId, scope = data.scope || 'online';
+        let targetList = [];
+        if (scope === 'all') {
+          targetList = await store.list();
+        } else {
+          targetList = [...peers.values()].map(p => p.account);
+        }
+        for (const u of targetList) {
+          try {
+            await store.command({
+              actorId: u.id,
+              requestId: 'admin-mass-' + Date.now() + '-' + u.id.slice(0, 6),
+              hash: '0000000000000000000000000000000000000000000000000000000000000000',
+              expectedRevision: u.profileRevision || 0,
+              run: async (records) => {
+                const t = records.get(u.id);
+                if (type === 'energy') { t.profile.energy = (t.profile.energy || 0) + amount; }
+                else if (type === 'item' && itemId) {
+                  t.profile.bag = t.profile.bag || {};
+                  t.profile.bag[itemId] = (t.profile.bag[itemId] || 0) + amount;
+                }
+                return { ok: true };
+              }
+            });
+            const updated = await store.get(u.id);
+            const peer = peers.get(u.id);
+            if (peer) send(peer.socket, { type: 'profile', profile: updated.profile, revision: updated.profileRevision, authorityVersion: 1 });
+          } catch {}
+        }
+        const itemName = data.itemName || (type === 'energy' ? 'Năng lượng' : itemId);
+        const bcast = `🎁 Quà Toàn Server: Tất cả người chơi nhận được +${amount.toLocaleString()} ${itemName}!`;
+        for (const peer of peers.values()) send(peer.socket, { type: 'chat', id: 'admin', name: 'HỆ THỐNG', message: bcast, at: Date.now() });
+        return respond(response, 200, { ok: true, count: targetList.length });
       }
     }
 
@@ -356,7 +498,7 @@ export async function createGameServer(options = {}) {
       try { data = await readFile(target); } catch { throw failure(404, 'Build the game first, then open its home page.'); }
       response.writeHead(200, { 'Content-Type': mime[path.extname(target)] || 'application/octet-stream', 'Cache-Control': /(?:index\.html|sw\.js|manifest|\.json)$/.test(relative) ? 'no-cache' : 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
       response.end(request.method === 'HEAD' ? undefined : data);
-    } catch (error) { if (!response.headersSent) respond(response, error.status || 500, { error: error.status ? error.message : 'The server could not complete that request.' }); else response.end(); }
+    } catch (error) { if (!response.headersSent) respond(response, error.status || 500, { error: error.status ? error.message : 'The server could not complete that request.', ...(error.retryAfterMs ? { retryAfterMs: error.retryAfterMs } : {}) }); else response.end(); }
   });
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024, perMessageDeflate: false });
   server.on('upgrade', async (request, socket, head) => {
@@ -382,7 +524,7 @@ export async function createGameServer(options = {}) {
     catch (error) { peers.delete(account.id); send(socket, { type: 'error', message: error.message }); socket.close(1008, 'World unavailable'); return; }
     socket.isAlive = true; socket.on('pong', () => { socket.isAlive = true; });
     for (const id of account.friends) if (accounts.has(id)) tellFriends(accounts.get(id));
-    socket.on('message', raw => {
+    socket.on('message', async raw => {
       let requestId;
       try {
         if (socket.readyState !== WebSocket.OPEN || peers.get(account.id) !== peer) return;
@@ -392,7 +534,10 @@ export async function createGameServer(options = {}) {
         if (message.type === 'chat' && typeof message.requestId === 'string' && /^[a-zA-Z0-9-]{16,80}$/.test(message.requestId)) requestId = message.requestId;
         rate(`messages:${account.id}`, 80, 1000);
         const room = rooms.get(peer.room);
-        if (message.type === 'active') { peer.active = message.active === true; if (room) elect(room); }
+        if(message.type==='arenaJoin'){rate(`arena:${account.id}`,6,10000);await combatAuthority.flushPeerHealth(peer);if(peers.get(account.id)!==peer||socket.readyState!==WebSocket.OPEN)return;combatAuthority.resetPeer(peer,{reason:'arena'});combatAuthority.arena.join(peer);}
+        else if(message.type==='arenaLeave'){combatAuthority.arena.leave(peer);combatAuthority.resetPeer(peer,{reason:'arena'});}
+        else if(message.type==='eventStatus'){send(socket,{type:'worldEventStatus',...worldEvents.status()});combatAuthority.arena.publish(room);}
+        else if (message.type === 'active') { peer.active = message.active === true; if (room) elect(room); }
         else if (message.type === 'join') {if(message.planet!==account.profile.planet)throw failure(403,'Travel to that planet before joining it.');join(peer, message.planet, text(message.party, 8).toUpperCase() || null);}
         else if (message.type === 'party') {
           const code = randomBytes(4).toString('hex').slice(0, 6).toUpperCase(); parties.set(code, { owner: account.id, created: Date.now() });
@@ -400,6 +545,7 @@ export async function createGameServer(options = {}) {
         } else if (message.type === 'pose' && room) {
           const now = Date.now(); if (now - peer.poseAt < 65) return;
           const x = number(message.x), z = number(message.z), elapsed = Math.min(5, (now - peer.poseAt) / 1000);
+          if(combatAuthority.arena.has(peer)&&!combatAuthority.arena.canAct(peer)){send(socket,{type:'arenaPosition',x:peer.pose.x,z:peer.pose.z});return;}
           const distance = Math.hypot(x - peer.pose.x, z - peer.pose.z);
           if (peer.poseAt && distance > 55 * elapsed + 8 && !(Math.hypot(x, z) < 2)) return;
           const combat=combatAuthority.engineFor(peer).sim;
@@ -440,9 +586,9 @@ export async function createGameServer(options = {}) {
           const changed=combatAuthority.activeSnapshots(room);
           if(changed.length)broadcast(room,{type:'enemies',enemies:changed});
         } else if(message.type==='basic'&&room&&!peer.visit){
-          rate('basic:'+account.id,12,1000);combatAuthority.basic(peer,text(message.targetId,100));
+          rate('basic:'+account.id,12,1000);if(combatAuthority.arena.canAct(peer))combatAuthority.basic(peer,text(message.targetId,100));
         } else if(message.type==='skill'&&room&&!peer.visit){
-          rate('skill:'+account.id,12,1000);combatAuthority.skill(peer,message.index);
+          rate('skill:'+account.id,12,1000);if(combatAuthority.arena.canAct(peer))combatAuthority.skill(peer,message.index);
         } else if(message.type==='environmentAction'&&room&&!peer.visit){
           const action=message.action;
           if(action?.kind==='light-pillar'){
@@ -455,7 +601,7 @@ export async function createGameServer(options = {}) {
           const visual=message.visual,cleanVisual=visual&&['arc','ring','impact','trail','beam','cast','toss'].includes(visual.kind)?{kind:visual.kind,x:number(visual.x),z:number(visual.z),radius:number(visual.radius,1,0,40),facing:number(visual.facing,0,-100,100),duration:number(visual.duration,.4,0,5),...(Number.isFinite(visual.arc)?{arc:number(visual.arc,2.2,0,6.3)}:{}),...(Number.isFinite(visual.width)?{width:number(visual.width,.65,.05,4)}:{}),...(EFFECT_LOOKS.includes(visual.look)?{look:visual.look}:{}),color:/^#[a-f0-9]{6}$/i.test(visual.color)?visual.color:'#fff2a0'}:null;
           broadcast(room, { type: 'effect', visual:cleanVisual, by: account.id, effect: text(message.effect, 30), x: number(message.x), z: number(message.z), color: /^#[a-f0-9]{6}$/i.test(message.color) ? message.color : '#fff2a0' }, account.id);
         }
-      } catch (error) { send(socket, { type: 'error', ...(requestId ? { requestId } : {}), message: error.status ? error.message : 'That action could not be completed.' }); }
+      } catch (error) { send(socket, { type: 'error', ...(requestId ? { requestId } : {}), ...(error.status === 429 ? { status: 429, retryAfterMs: error.retryAfterMs } : {}), message: error.status ? error.message : 'That action could not be completed.' }); }
     });
     socket.on('close', () => {
       if (peers.get(account.id) !== peer) return;
@@ -481,7 +627,7 @@ export async function createGameServer(options = {}) {
   catch (error) { clearInterval(cleanup); clearInterval(heartbeat); await store.close(); throw error; }
   return {
     server, port: server.address().port, url: `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${server.address().port}`,
-    async close() { if (closing) return; closing = true; await combatAuthority.close(); clearInterval(cleanup); clearInterval(heartbeat); for (const socket of sockets.clients) socket.terminate(); await new Promise(resolve => sockets.close(resolve)); await new Promise(resolve => server.close(resolve)); await store.close(); },
+    async close() { if (closing) return; closing = true; worldEvents.close();await combatAuthority.close(); clearInterval(cleanup); clearInterval(heartbeat); for (const socket of sockets.clients) socket.terminate(); await new Promise(resolve => sockets.close(resolve)); await new Promise(resolve => server.close(resolve)); await store.close(); },
   };
 }
 
