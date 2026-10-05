@@ -72,7 +72,21 @@ test('fairy and superhero effects carry distinct looks to remote clients', () =>
   hero.sim.disguise('dz_superhero', 3); run(hero.sim, .82);
   assert.ok(hero.effects.some(e => e.look === 'hero'));
   assert.ok(hero.effects.some(e => e.look === 'heroDive' && e.radius === 5));
-  assert.ok(hero.effects.some(e => e.kind === 'impact' && e.look === 'hero'));
+  assert.ok(hero.effects.some(e => e.kind === 'impact' && e.look === 'mountain'));
+});
+
+test('superhero boulder is a spinning mountain that bursts on impact or at range', () => {
+  const hit = rig([at(0, 4, 'target')]);
+  hit.sim.disguise('dz_superhero', 3); run(hit.sim, 1.2);
+  assert.ok(hit.effects.some(e => e.look === 'mountain' && e.radius === 4));
+  const missed = rig([]); missed.sim.disguise('dz_superhero', 3); run(missed.sim, .82);
+  const scene = new T.Scene(), view = new CombatView(scene);
+  view.update(.05, missed.sim.projectiles);
+  const mountain = scene.children.find(child => child instanceof T.Mesh) as T.Mesh;
+  assert.equal(mountain.geometry.type, 'ConeGeometry');
+  assert.ok(mountain.rotation.x !== 0 && mountain.rotation.y !== 0 && mountain.rotation.z !== 0);
+  view.clear(); run(missed.sim, 1);
+  assert.ok(missed.effects.some(e => e.look === 'mountain' && e.radius === 4));
 });
 
 test('a beam plane lies along its facing at every angle (it was mirrored across z on diagonals)', () => {
@@ -131,7 +145,7 @@ test('the gaze view draws twin beams from the eyes to the line end, a ground ban
 // ---- 2. The battle robot is electric ------------------------------------------------------------------------------
 test('the battle robot fires electricity: volt bolts, a tesla turret, shock missiles and an electric tank wave', () => {
   assert.equal(M.DISGUISES.dz_mecha.weapon!.shot, 'volt'); assert.equal(M.ITEMS.pet_robot.pet!.shot, 'volt');
-  assert.ok(ELECTRIC_SHOTS.has('volt') && ELECTRIC_SHOTS.has('missile')); assert.deepEqual([...EFFECT_LOOKS].sort(), ['burn', 'eyes', 'flower', 'hero', 'heroDive', 'roots', 'shock']);
+  assert.ok(ELECTRIC_SHOTS.has('volt') && ELECTRIC_SHOTS.has('missile')); assert.deepEqual([...EFFECT_LOOKS].sort(), ['burn', 'eyes', 'flower', 'hero', 'heroDive', 'mountain', 'roots', 'shock']);
   const ring = () => [at(0, 3, 'a'), at(1, 4, 'b'), at(-1, 5, 'c')];
   // Missiles: every impact and blast is an electric burst; no stun added (they never stunned).
   const m = rig(ring()); m.sim.disguise('dz_mecha', 2); run(m.sim, 2);
