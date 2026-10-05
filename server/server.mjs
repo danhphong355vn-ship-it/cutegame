@@ -537,6 +537,7 @@ export async function createGameServer(options = {}) {
         if(message.type==='arenaJoin'){rate(`arena:${account.id}`,6,10000);await combatAuthority.flushPeerHealth(peer);if(peers.get(account.id)!==peer||socket.readyState!==WebSocket.OPEN)return;combatAuthority.resetPeer(peer,{reason:'arena'});combatAuthority.arena.join(peer);}
         else if(message.type==='arenaLeave'){combatAuthority.arena.leave(peer);combatAuthority.resetPeer(peer,{reason:'arena'});}
         else if(message.type==='eventStatus'){send(socket,{type:'worldEventStatus',...worldEvents.status()});combatAuthority.arena.publish(room);}
+        else if(message.type==='ping'){send(socket,{type:'pong',at:message.at});}
         else if (message.type === 'active') { peer.active = message.active === true; if (room) elect(room); }
         else if (message.type === 'join') {if(message.planet!==account.profile.planet)throw failure(403,'Travel to that planet before joining it.');join(peer, message.planet, text(message.party, 8).toUpperCase() || null);}
         else if (message.type === 'party') {

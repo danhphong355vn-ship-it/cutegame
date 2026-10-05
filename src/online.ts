@@ -6,6 +6,7 @@ import './online.css';
 import { t, onLanguageChange } from './i18n.ts';
 import {gameplayKey} from './gameplay-controls.ts';
 import type {GameIntent,ActionReply} from './actions.ts';
+import {ARENA,inArena} from './world-events.ts';
 
 interface Explorer { id:string;username?:string;name:string;color:string;level:number;gear:SaveState['gear'];look?:LookId;online?:boolean;x?:number;z?:number;y?:number;facing?:number;moving?:boolean;space?:string;planet?:string;difficulty?:string }
 interface Home extends Explorer { discovered?:PlanetId[]; plots:SaveState['plots'];farm?:SaveState['farm'];placed?:unknown[];decorations?:unknown[];helper?:unknown;friends?:unknown[] }
@@ -69,6 +70,11 @@ export function initOnline(game:GameBridge) {
   const players=new Map<string,Explorer>(),rewardIds=new Set<string>(),chat:{name:string;message:string}[]=[];
   let chatRoom:string|null=null,chatDraft='',chatReady=false,chatAttempt:ChatAttempt|null=null;
   let sharingLoot=false;
+  let fpsFrames=0,fpsAccum=0,currentFps=60,currentPing=0,lastPingAt=0,lastSentPose:{x:number;y:number;z:number;facing?:number;moving?:boolean}|null=null;
+  const hudPerf = el('div', 'hud-perf-badge');
+  hudPerf.id = 'hud-perf';
+  hudPerf.innerHTML = '🟢 <b>60 FPS</b> <span style="opacity:0.35">|</span> Ping: <span style="color:#94a3b8">Offline</span>';
+  document.body?.append?.(hudPerf);
   const toggle=button(`👥 ${t('Play together')}`,()=>{render();dialog.showModal();},'social-toggle');toggle.id='online-button';const socialSlot=document.querySelector('#social-slot');if(socialSlot){socialSlot.append(toggle);toggle.classList.add('social-inline-toggle');}else document.body.append(toggle);toggle.setAttribute('aria-label',t('Play together'));
   const dialog=el('dialog','social-dialog');dialog.id='online-dialog';dialog.setAttribute('aria-label',t('Play together'));document.body.append(dialog);
   const header=el('header','social-header'),heading=el('h2','',t('Play together')),close=button('✕',()=>dialog.close(),'social-close');close.setAttribute('aria-label',t('Close online menu'));header.append(heading,close);
@@ -111,16 +117,31 @@ export function initOnline(game:GameBridge) {
   };
 
   const world=()=>game.getWorld() as ReturnType<GameBridge['getWorld']> & NetworkWorld;
-  let noticeSource='',noticeParams:Record<string,string|number>={},saveStatusSource='';
+  let noticeSource='',noticeParams:Record<string,string|number>={},saveStatusSource='',actionRetryAt=0,rateNoticeAt=0;
   function setNotice(message:string,params:Record<string,string|number>={}){noticeSource=message;noticeParams=params;notice.textContent=t(message,params);}
   function announce(message:string,params:Record<string,string|number>={}){setNotice(message,params);game.showNotice(t(message,params));}
   function setSaveStatus(message:string){saveStatusSource=message;const label=document.querySelector('#save-status');if(label)label.textContent=t(message);}
   async function api<T>(path:string,data?:unknown,method=data?'POST':'GET'):Promise<T>{
     const response=await fetch(`${serviceBase}api/${path}`,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});
-    let value:{error?:string};try{value=await response.json();}catch{throw new Error('Online play needs the game server. Your offline adventure is ready to play.');}
-    if(!response.ok)throw Object.assign(new Error(value.error||'Connection interrupted. Please try again.'),{status:response.status});return value as T;
+    let value:{error?:string,retryAfterMs?:number};try{value=await response.json();}catch{throw new Error('Online play needs the game server. Your offline adventure is ready to play.');}
+    if(!response.ok)throw Object.assign(new Error(value.error||'Connection interrupted. Please try again.'),{status:response.status,retryAfterMs:value.retryAfterMs});return value as T;
   }
   const send=(value:unknown)=>{if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify(value));return true;}return false;};
+  let eventBoss:{id:string;name:string;planet:string;x:number;z:number;expiresAt:number}|null=null;
+  let activitiesClock=0,arenaPlayers:{id:string;name:string;hp:number;maxHp:number;x:number;z:number;protectedUntil:number;wins:number;losses:number}[]=[];
+  const activities=el('div','online-activities'),bossBanner=el('div','world-boss-banner'),arenaInfo=el('div','arena-info');
+  const arenaButton=button('⚔ Tham gia võ đài',()=>send({type:world().arenaActive?'arenaLeave':'arenaJoin'}));
+  activities.append(bossBanner,arenaInfo,arenaButton);document.body.append(activities);
+  function refreshActivities(){
+    activities.hidden=!account||socket?.readyState!==WebSocket.OPEN;
+    bossBanner.hidden=!eventBoss;
+    if(eventBoss){const minutes=Math.max(0,Math.ceil((eventBoss.expiresAt-Date.now())/60000));bossBanner.textContent=`🐲 ${eventBoss.name} · ${eventBoss.planet} (${eventBoss.x}, ${eventBoss.z}) · còn ${minutes} phút · thế giới công cộng`;}
+    const current=world(),presence=game.getPresence();arenaButton.hidden=presence.planet!==ARENA.planet||!!party||!!visiting;
+    arenaButton.textContent=current.arenaActive?'Rời võ đài':'⚔ Tham gia võ đài';
+    arenaInfo.hidden=!current.arenaActive;
+    if(current.arenaActive){const self=arenaPlayers.find(p=>p.id===account?.id);arenaInfo.textContent=`VÕ ĐÀI · ${Math.ceil(self?.hp??0)}/${Math.ceil(self?.maxHp??0)} HP · ${self?.wins??0} thắng / ${self?.losses??0} thua\nSpace / nút đánh · Q/W/E/R: chiêu · ra ngoài vòng để rời`;
+      current.arenaTargets=arenaPlayers.filter(p=>p.id!==account?.id&&p.hp>0&&p.protectedUntil<=Date.now()&&inArena(presence.planet,p)).map(p=>{const remote=players.get(p.id);return {id:`arena:${p.id}`,x:remote?.x??p.x,z:remote?.z??p.z,hp:p.hp,maxHp:p.maxHp,radius:.65};});}
+  }
   function captureChatDraft(){const input=content.querySelector<HTMLInputElement>('.social-chat-input');if(input)chatDraft=input.value;}
   function refreshChatControls(){
     const input=content.querySelector<HTMLInputElement>('.social-chat-input');if(input)input.value=chatDraft;
@@ -217,7 +238,7 @@ export function initOnline(game:GameBridge) {
   // Progress reaches the server only as an explicit intent, never a profile snapshot.
   function queueSave(_state:SaveState){if(actionQueue.length)void flushSave();}
   async function flushSave(){
-    if(saving)return saving;if(!actionQueue.length||!account||stopped)return;
+    if(saving)return saving;if(!actionQueue.length||!account||stopped||Date.now()<actionRetryAt)return;
     const accountId=account.id,epoch=sessionEpoch;
     saving=(async()=>{while(actionQueue.length&&account?.id===accountId&&sessionEpoch===epoch&&!stopped){const job=actionQueue[0];
       try{if(!job.submitted){job.expectedRevision=revision;job.submitted=true;rememberActions();}const {submitted,...body}=job;const reply=await api<ActionReply>('actions',body);if(account?.id!==accountId||sessionEpoch!==epoch)return;
@@ -227,11 +248,12 @@ export function initOnline(game:GameBridge) {
         status=socket?.readyState===WebSocket.OPEN?'Online':'Reconnecting';setSaveStatus(actionQueue.length?'◌ Saving online…':'● Saved online');refreshButton();
       }catch(error){if(account?.id!==accountId||sessionEpoch!==epoch)return;const statusCode=(error as {status?:number}).status;
         if(statusCode===401){expireSession();return;}
+        if(statusCode===429){const delay=(error as {retryAfterMs?:number}).retryAfterMs;actionRetryAt=Date.now()+Math.max(1000,Number.isFinite(delay)?delay!:60000);status='Action pending';setSaveStatus('◌ Saving online…');refreshButton();break;}
         if(statusCode===409){try{const fresh=await api<Session>('auth/session');if(account?.id!==accountId||sessionEpoch!==epoch)return;if(!fresh.account){expireSession();return;}if(fresh.account.id!==accountId){begin(fresh);return;}revision=fresh.revision||0;if(fresh.profile)game.applyAuthoritativeState(fresh.profile);}catch{break;}continue;}
         if(statusCode&&statusCode<500){actionQueue.shift();rememberActions();waiting.get(job.requestId)?.reject(error as Error);waiting.delete(job.requestId);continue;}
         status='Action pending';setSaveStatus('○ Action pending — reconnect to finish');refreshButton();break;
       }
-    }})().finally(()=>{saving=null;if(actionQueue.length&&account&&!stopped){if(sessionEpoch!==epoch)void flushSave();else saveTimer=window.setTimeout(()=>void flushSave(),5000);}});
+    }})().finally(()=>{saving=null;if(actionQueue.length&&account&&!stopped){if(sessionEpoch!==epoch)void flushSave();else saveTimer=window.setTimeout(()=>void flushSave(),Math.max(5000,actionRetryAt-Date.now()));}});
     return saving;
   }
   function connect(){
@@ -244,10 +266,11 @@ export function initOnline(game:GameBridge) {
       // A visit changes the room, never the owner's saved adventure planet.
       if(message.enemies?.length)world().applyEnemySnapshots(message.enemies);game.clearNetworkDrops();const dropEpoch=++roomEpoch;void api<{drops:NetworkDrop[]}>('drops').then(result=>{if(socket===connection&&roomEpoch===dropEpoch&&chatRoom===nextRoom&&!visiting&&account)for(const drop of result.drops||[])if(drop.room===nextRoom)game.spawnNetworkDrop(drop,account.id);}).catch(()=>{});if(message.environment)world().applyEnvironmentSnapshot(message.environment);authority(message.host,message.enemies);renderPlayers();status=party?'Party {code}':'Online';refreshButton();if(dialog.open)render();else refreshChatControls();
     }
-    socket.addEventListener('open',()=>{if(socket!==connection)return;status='Online';refreshButton();send({type:'active',active:!document.hidden});void flushSave();});
+    socket.addEventListener('open',()=>{if(socket!==connection)return;status='Online';refreshButton();send({type:'active',active:!document.hidden});send({type:'eventStatus'});void flushSave();});
     socket.addEventListener('message',event=>{
       if(socket!==connection)return;let message:any;try{message=JSON.parse(event.data);}catch{return;}
       if(message.type==='welcome'){friends=message.friends||[];requests=message.requests||[];}
+      else if(message.type==='pong'){currentPing=Math.max(1,Date.now()-(Number(message.at)||Date.now()));}
       else if(message.type==='joined')joined(message);
       else if(message.type==='authority'){if(message.environment)world().applyEnvironmentSnapshot(message.environment);authority(message.host,message.enemies);}
       else if(message.type==='enter'||message.type==='pose'){if(message.player?.id)players.set(message.player.id,message.player);renderPlayers();}
@@ -255,6 +278,19 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='enemies')world().applyEnemySnapshots(message.enemies);
       else if(message.type==='profile'&&message.authorityVersion===1&&message.profile&&message.revision>=revision){revision=message.revision;game.applyAuthoritativeState(message.profile);}
       else if(message.type==='enemyHealth')world().applyAuthoritativeEnemyHealth(message);
+      else if(message.type==='defeat'&&account&&Array.isArray(message.by)&&message.by.includes(account.id)){
+        const xp=message.xpById?.[account.id];
+        if(Number.isFinite(xp)&&xp>0)game.applySharedKill(message.id,xp,!!message.boss,message.enemyType,message.eventId,message.x,message.z);
+      }
+      else if(message.type==='worldEventStatus'){eventBoss=message.active;refreshActivities();}
+      else if(message.type==='worldEvent'){eventBoss=message.phase==='spawn'?message.boss:null;announce(message.message);if(Array.isArray(message.ranking))announce('🏆 Sát thương: '+message.ranking.slice(0,5).map((p:any,i:number)=>`${i+1}. ${p.name}: ${p.damage}`).join(' · '));refreshActivities();}
+      else if(message.type==='arenaJoined'){const current=world();current.arenaActive=true;current.position.x=message.spawnX;current.position.z=message.spawnZ;current.destination=null;current.route=[];announce('Đã vào võ đài! Bảo vệ 3 giây. Thua không mất đồ.');refreshActivities();}
+      else if(message.type==='arenaLeft'){world().arenaActive=false;world().arenaStunUntil=0;world().arenaTargets=[];refreshActivities();}
+      else if(message.type==='arenaControl'){world().arenaStunUntil=Date.now()+Math.max(0,Math.min(2000,message.duration||0));}
+      else if(message.type==='arenaPosition'){if(world().arenaActive){world().position.x=message.x;world().position.z=message.z;}}
+      else if(message.type==='arena'){arenaPlayers=message.players||[];refreshActivities();}
+      else if(message.type==='arenaHit'){world().hurtFeedback(message.damage);}
+      else if(message.type==='arenaResult'){announce(message.won?`🏆 Bạn thắng ${message.loser}!`:`Bạn thua ${message.winner}. Đồ và máu ngoài võ đài được giữ nguyên.`);}
       else if(message.type==='environment')world().applyEnvironmentSnapshot(message.snapshot);
       else if(message.type==='gardenEvent'){
         if(message.blocked){
@@ -300,10 +336,10 @@ export function initOnline(game:GameBridge) {
         else world().burst(message.x,message.z,message.color,8);
       }
       else if(message.type==='party'){party=message.code;announce('Party code: {code}',{code:party||''});if(dialog.open)render();}
-      else if(message.type==='error'){if(chatMatches(message.requestId,connection))releaseChat();if(!message.requestId){chatReady=!!chatRoom&&connection.readyState===WebSocket.OPEN;refreshChatControls();}if(restoring&&fallbackJoin){desiredParty=null;restoring=false;joined(fallbackJoin);}announce(message.message||'That action was unavailable.');}
+      else if(message.type==='error'){if(chatMatches(message.requestId,connection))releaseChat();if(!message.requestId){chatReady=!!chatRoom&&connection.readyState===WebSocket.OPEN;refreshChatControls();}if(restoring&&fallbackJoin){desiredParty=null;restoring=false;joined(fallbackJoin);}if(message.status!==429||Date.now()>=rateNoticeAt){announce(message.message||'That action was unavailable.');if(message.status===429)rateNoticeAt=Date.now()+Math.max(1000,message.retryAfterMs||1000);}}
     });
     socket.addEventListener('close',event=>{
-      if(socket!==connection)return;chatReady=false;releaseChat(chatAttempt?.pending?'Connection interrupted. Your chat draft is kept.':undefined);authority(null);world().clearRemotePlayers();players.clear();
+      if(socket!==connection)return;world().arenaActive=false;world().arenaTargets=[];activities.hidden=true;chatReady=false;releaseChat(chatAttempt?.pending?'Connection interrupted. Your chat draft is kept.':undefined);authority(null);world().clearRemotePlayers();players.clear();
       if(!account||stopped)return;if(event.code===4001){stopped=true;rejectActions('This online adventure is active in another tab.');if(saveTimer)clearTimeout(saveTimer);game.setPersistence(()=>{});status='Open in another tab';announce('This online adventure is active in another tab. Close it there, then reconnect here.');}
       else{status='Reconnecting';reconnect=window.setTimeout(connect,2500);const epoch=sessionEpoch;void api<Session>('auth/session').then(session=>{if(socket===connection&&sessionEpoch===epoch&&account&&!session.account)expireSession();}).catch(()=>{});}refreshButton();
     });
@@ -311,7 +347,7 @@ export function initOnline(game:GameBridge) {
   }
   function begin(session:Session){
     if(!session.account||!session.profile)return;if(session.authorityVersion!==1){announce('This server needs the current game rules.');return;}sessionEpoch++;
-    if(account?.id!==session.account.id){rememberActions();rejectActions('Your session ended. Pending actions remain on this device.');clearChat();party=null;visiting=null;}
+    if(account?.id!==session.account.id){actionRetryAt=0;rateNoticeAt=0;rememberActions();rejectActions('Your session ended. Pending actions remain on this device.');clearChat();party=null;visiting=null;}
     const previous=socket;socket=null;previous?.close();if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);
     if(!account)offline=structuredClone(game.getState());account=session.account;friends=session.friends||[];requests=session.requests||[];stopped=false;
     revision=session.revision||0;try{const raw=localStorage.getItem(`cute-game-actions-${account.id}`),cached=raw?JSON.parse(raw):null;if(Array.isArray(cached))actionQueue=cached.filter(job=>job&&typeof job.requestId==='string'&&typeof job.type==='string'&&job.rulesVersion===1&&Number.isSafeInteger(job.expectedRevision)).slice(0,100);}catch{/* Keep this account's in-memory queue if storage is unavailable. */}
@@ -363,9 +399,34 @@ export function initOnline(game:GameBridge) {
     }
   }
   game.onFrame(dt=>{
-    if(!account||socket?.readyState!==WebSocket.OPEN)return;poseClock+=dt;enemyClock+=dt;const presence=game.getPresence();
+    fpsFrames++; fpsAccum += dt;
+    if(fpsAccum >= 0.5){
+      currentFps = Math.max(1, Math.round(fpsFrames / fpsAccum));
+      fpsFrames = 0; fpsAccum = 0;
+      if(hudPerf){
+        const dot = currentFps >= 45 ? '🟢' : currentFps >= 25 ? '🟡' : '🔴';
+        const pingColor = currentPing > 120 ? '#ef4444' : currentPing > 60 ? '#f59e0b' : '#38bdf8';
+        const pingVal = socket?.readyState === WebSocket.OPEN && account ? `<span style="color:${pingColor}">${currentPing || 1}ms</span>` : '<span style="color:#94a3b8">Offline</span>';
+        hudPerf.innerHTML = `${dot} <b>${currentFps} FPS</b> <span style="opacity:0.35">|</span> Ping: ${pingVal}`;
+      }
+    }
+    activitiesClock+=dt;if(activitiesClock>=.1){activitiesClock=0;refreshActivities();}
+    if(!account||socket?.readyState!==WebSocket.OPEN)return;
+    if(Date.now() - lastPingAt > 2500){
+      lastPingAt = Date.now();
+      send({type:'ping',at:lastPingAt});
+    }
+    poseClock+=dt;enemyClock+=dt;const presence=game.getPresence();
     if(!visiting&&presence.planet!==planet){game.setVisiting(null);planet=presence.planet;sendRoom({type:'join',planet,party});return;}
-    if(poseClock>=.1){poseClock=0;send({type:'pose',...presence});renderPlayers();}
+    const isMoving = !!presence.moving;
+    const moved = !lastSentPose || Math.abs(presence.x - lastSentPose.x) > 0.05 || Math.abs(presence.z - lastSentPose.z) > 0.05 || Math.abs((presence.facing || 0) - (lastSentPose.facing || 0)) > 0.1 || isMoving !== lastSentPose.moving;
+    const poseInterval = (isMoving || moved) ? 0.1 : 1.5;
+    if(poseClock>=poseInterval){
+      poseClock=0;
+      lastSentPose = { x: presence.x, y: presence.y, z: presence.z, facing: presence.facing, moving: isMoving };
+      send({type:'pose',...presence});
+      renderPlayers();
+    }
     // The elected browser supplies AI positions/telegraphs; the server replaces HP,
     // damage and rewards with canonical combat values before relaying the snapshot.
     if(host===account.id&&enemyClock>=.15){enemyClock=0;send({type:'enemies',enemies:world().enemySnapshots()});}
