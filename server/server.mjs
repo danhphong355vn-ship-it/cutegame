@@ -547,6 +547,8 @@ export async function createGameServer(options = {}) {
           if(!validBets.includes(bet))throw failure(400,'Mức cược không hợp lệ.');
           const targetPeer=peers.get(targetId);
           if(!targetPeer||targetId===account.id)throw failure(400,'Người chơi không khả dụng.');
+          if(targetPeer.planet!==peer.planet||targetPeer.room!==peer.room)throw failure(400,'Cả hai người chơi phải ở cùng một hành tinh để thách đấu!');
+          if((peer.pose?.y??0)>=25||(targetPeer.pose?.y??0)>=25)throw failure(400,'Không thể thách đấu khi đang ở trong nhà!');
           if((account.profile.energy||0)<bet)throw failure(400,'Bạn không đủ Vàng để cược mức này!');
           if((targetPeer.account.profile.energy||0)<bet)throw failure(400,`${targetPeer.account.profile.name} không có đủ ${bet.toLocaleString()} Vàng để đấu cược!`);
           if(combatAuthority.arena.isDueled(account.id)||combatAuthority.arena.isDueled(targetId))throw failure(400,'Một trong hai người đang trong trận đấu võ đài.');
@@ -579,6 +581,8 @@ export async function createGameServer(options = {}) {
           clearTimeout(invite.timer);pendingDuelInvites.delete(inviteId);
           const challengerPeer=peers.get(fromId);
           if(!challengerPeer||challengerPeer.socket.readyState!==WebSocket.OPEN)throw failure(400,'Đối thủ đã rời mạng.');
+          if(challengerPeer.planet!==peer.planet||challengerPeer.room!==peer.room)throw failure(400,'Đối thủ đã rời sang khu vực khác.');
+          if((peer.pose?.y??0)>=25||(challengerPeer.pose?.y??0)>=25)throw failure(400,'Không thể chấp nhận thách đấu khi đang ở trong nhà!');
           if((account.profile.energy||0)<invite.bet)throw failure(400,'Bạn không đủ Vàng để cược mức này!');
           if((challengerPeer.account.profile.energy||0)<invite.bet)throw failure(400,`${challengerPeer.account.profile.name} không còn đủ Vàng để tham gia!`);
           if(invite.bet>0){
@@ -602,15 +606,11 @@ export async function createGameServer(options = {}) {
           }
           if(challengerPeer.visit)endVisit(challengerPeer);
           if(peer.visit)endVisit(peer);
-          challengerPeer.planet='arena';challengerPeer.account.profile.planet='arena';
-          join(challengerPeer,'arena',null,null,true);
-          peer.planet='arena';peer.account.profile.planet='arena';
-          join(peer,'arena',null,null,true);
           combatAuthority.arena.startDuel(challengerPeer,peer,invite.bet,invite.bet*2);
           const duelRoom=rooms.get(peer.room);
           if(duelRoom){
-            const duelNotice=`⚔️ ${challengerPeer.account.profile.name} và ${account.profile.name} vừa bước vào Võ Đài La Mã (Cược: ${invite.bet.toLocaleString()} Vàng)!`;
-            broadcast(duelRoom,{type:'chat',id:'system',name:'ĐẤU TRƯỜNG',message:duelNotice,at:Date.now()});
+            const duelNotice=`⚔️ ${challengerPeer.account.profile.name} và ${account.profile.name} đã bắt đầu trận quyết đấu Solo (Cược: ${invite.bet.toLocaleString()} Vàng)!`;
+            broadcast(duelRoom,{type:'chat',id:'system',name:'QUYẾT ĐẤU',message:duelNotice,at:Date.now()});
           }
         }
         else if(message.type==='eventStatus'){send(socket,{type:'worldEventStatus',...worldEvents.status()});combatAuthority.arena.publish(room);}

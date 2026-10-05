@@ -1,5 +1,5 @@
 import type { GameBridge, NetworkDrop } from './game-bridge.ts';
-import { newGame, ITEMS, type SaveState, type PlanetId, type Difficulty } from './model.ts';
+import { newGame, maxHp, ITEMS, type SaveState, type PlanetId, type Difficulty } from './model.ts';
 import type { LookId } from './looks.ts';
 import { INDOOR_Y } from './house.ts';
 import './online.css';
@@ -68,8 +68,18 @@ function initSoloEdition() {
 }
 
 export function initOnline(game:GameBridge) {
-  // Static hosting has no account API or WebSocket server. Leave local saves intact.
-  if(import.meta.env.VITE_STATIC_HOST==='true'){initSoloEdition();return;}
+  if(import.meta.env.VITE_STATIC_HOST==='true'){
+    initSoloEdition();
+    return {
+      openDialog:()=>{},
+      closeDialog:()=>{},
+      isLoggedIn:()=>false,
+      getAccount:()=>null,
+      hasSavedAuth:()=>false,
+      onLogin:()=>{},
+      autoLoginPromise:Promise.resolve(false)
+    };
+  }
   const serviceBase=import.meta.env.BASE_URL;
   let account:Explorer|null=null,friends:Explorer[]=[],requests:Explorer[]=[],socket:WebSocket|null=null;
   let host:string|null=null,party:string|null=null,planet='',visiting:string|null=null,offline:SaveState|null=null,roomEpoch=0;
@@ -139,7 +149,7 @@ export function initOnline(game:GameBridge) {
   }
   const send=(value:unknown)=>{if(socket?.readyState===WebSocket.OPEN){socket.send(JSON.stringify(value));return true;}return false;};
   let eventBoss:{id:string;name:string;planet:string;x:number;z:number;expiresAt:number}|null=null;
-  let activitiesClock=0,arenaPlayers:{id:string;name:string;hp:number;maxHp:number;x:number;z:number;protectedUntil:number;wins:number;losses:number}[]=[];
+  let activitiesClock=0,arenaPlayers:{id:string;name:string;hp:number;maxHp:number;x:number;z:number;protectedUntil:number;wins:number;losses:number;isDuel?:boolean}[]=[];
   const activities=el('div','online-activities'),bossBanner=el('div','world-boss-banner'),arenaInfo=el('div','arena-info');
   const arenaButton=button('⚔ Tham gia võ đài',()=>send({type:world().arenaActive?'arenaLeave':'arenaJoin'}));
   activities.append(bossBanner,arenaInfo,arenaButton);document.body.append(activities);
@@ -164,9 +174,13 @@ export function initOnline(game:GameBridge) {
     if(eventBoss){const minutes=Math.max(0,Math.ceil((eventBoss.expiresAt-Date.now())/60000));bossBanner.textContent=`🐲 ${eventBoss.name} · ${eventBoss.planet} (${eventBoss.x}, ${eventBoss.z}) · còn ${minutes} phút · thế giới công cộng`;}
     const current=world(),presence=game.getPresence();arenaButton.hidden=presence.planet!==ARENA.planet||!!party||!!visiting;
     arenaButton.textContent=current.arenaActive?'Rời võ đài':'⚔ Tham gia võ đài';
-    arenaInfo.hidden=!current.arenaActive;
-    if(current.arenaActive){const self=arenaPlayers.find(p=>p.id===account?.id);arenaInfo.textContent=`VÕ ĐÀI · ${Math.ceil(self?.hp??0)}/${Math.ceil(self?.maxHp??0)} HP · ${self?.wins??0} thắng / ${self?.losses??0} thua\nSpace / nút đánh · Q/W/E/R: chiêu · ra ngoài vòng để rời`;
-      current.arenaTargets=arenaPlayers.filter(p=>p.id!==account?.id&&p.hp>0&&p.protectedUntil<=Date.now()&&inArena(presence.planet,p)).map(p=>{const remote=players.get(p.id);return {id:`arena:${p.id}`,x:remote?.x??p.x,z:remote?.z??p.z,hp:p.hp,maxHp:p.maxHp,radius:.65};});}
+    const isDuelActive = !!arenaPlayers.find(p=>p.id===account?.id)?.isDuel;
+    arenaInfo.hidden=!current.arenaActive||isDuelActive;
+    if(current.arenaActive){const self=arenaPlayers.find(p=>p.id===account?.id);
+      if(!isDuelActive){
+        arenaInfo.textContent=`VÕ ĐÀI · ${Math.ceil(self?.hp??0)}/${Math.ceil(self?.maxHp??0)} HP · ${self?.wins??0} thắng / ${self?.losses??0} thua\nSpace / nút đánh · Q/W/E/R: chiêu · ra ngoài vòng để rời`;
+      }
+      current.arenaTargets=arenaPlayers.filter(p=>p.id!==account?.id&&p.hp>0&&p.protectedUntil<=Date.now()&&(p.isDuel||inArena(presence.planet,p))).map(p=>{const remote=players.get(p.id);return {id:`arena:${p.id}`,x:remote?.x??p.x,z:remote?.z??p.z,hp:p.hp,maxHp:p.maxHp,radius:.65};});}
   }
   function captureChatDraft(){const input=content.querySelector<HTMLInputElement>('.social-chat-input');if(input)chatDraft=input.value;}
   function refreshChatControls(){
@@ -383,11 +397,11 @@ export function initOnline(game:GameBridge) {
 
     // 3. Kết bạn
     const isFriend = friends.some(f => f.id === id);
-    const friendBtn = el('button', 'btn-player-action btn-friend', isFriend ? '🤝 Đã Là Bạn' : '🤝 Kết Bạn');
+    const friendBtn = el('button', 'btn-player-action btn-friend', isFriend ? t('Friend') : t('Send friend request'));
     if (isFriend) {
       friendBtn.style.opacity = '0.7';
     } else {
-      friendBtn.onclick = async () => {
+      const handleFriendRequest = async () => {
         try {
           await api('friends/request', { id });
           announce('Đã gửi lời mời kết bạn.');
@@ -397,6 +411,8 @@ export function initOnline(game:GameBridge) {
           announce((e as Error).message);
         }
       };
+      friendBtn.onclick = handleFriendRequest;
+      friendBtn.addEventListener('click', handleFriendRequest);
     }
 
     // 4. Thăm vườn
@@ -509,8 +525,9 @@ export function initOnline(game:GameBridge) {
     }, 850);
   }
 
-  function showDuelResult(result: { won: boolean; pot: number; bet: number; opponent?: string; winner?: string; loser?: string; forfeit?: boolean }) {
+  function showDuelResult(result: { won: boolean; pot: number; bet: number; opponent?: string; winner?: string; loser?: string; forfeit?: boolean; reason?: string }) {
     duelTopBar.style.display = 'none';
+    document.body.classList.remove('has-active-duel');
     duelResultModal.style.display = 'flex';
     const card = el('div', 'duel-result-card');
 
@@ -525,9 +542,17 @@ export function initOnline(game:GameBridge) {
       }
       const curState = game.getState();
       curState.energy = (curState.energy || 0) + (result.pot || 0);
+      curState.hp = maxHp(curState);
       game.applyState(curState);
 
-      const winReason = result.forfeit ? `${oppName} đã bỏ cuộc giữa trận!` : `Bạn đã hạ gục anh hùng ${oppName}!`;
+      let winReason = `Bạn đã hạ gục anh hùng ${oppName}!`;
+      if (result.forfeit) {
+        if (result.reason === 'house') {
+          winReason = `${oppName} đã bỏ chạy vào nhà và bị xử thua cuộc!`;
+        } else {
+          winReason = `${oppName} đã bỏ cuộc giữa trận!`;
+        }
+      }
       card.innerHTML = `
         <div class="duel-result-icon">👑</div>
         <h2 class="duel-result-title win">CHIẾN THẮNG TUYỆT ĐỐI!</h2>
@@ -536,10 +561,21 @@ export function initOnline(game:GameBridge) {
         <button class="btn-result-close">TIẾP TỤC</button>
       `;
     } else {
-      const loseReason = result.forfeit ? `Bạn đã rời khỏi võ đài trước khi trận đấu kết thúc.` : `Bạn đã bị ${oppName} đánh bại trên võ đài.`;
+      const curState = game.getState();
+      curState.hp = maxHp(curState);
+      game.applyState(curState);
+
+      let loseReason = `Bạn đã bị ${oppName} đánh bại trong trận quyết đấu.`;
+      if (result.forfeit) {
+        if (result.reason === 'house') {
+          loseReason = `Bạn đã bỏ chạy vào nhà nên bị xử thua cuộc!`;
+        } else {
+          loseReason = `Bạn đã rời khỏi trận đấu nên bị xử thua!`;
+        }
+      }
       card.innerHTML = `
         <div class="duel-result-icon">💀</div>
-        <h2 class="duel-result-title loss">THẤT BẠI TRÊN VÕ ĐÀI!</h2>
+        <h2 class="duel-result-title loss">THẤT BẠI TRONG QUYẾT ĐẤU!</h2>
         <p class="duel-result-sub">${loseReason}</p>
         <div class="duel-safe-box">🛡️ Mất ${result.bet ? result.bet.toLocaleString() : 0} Vàng tiền cược.<br>Toàn bộ trang bị và đồ trong ba lô được BẢO TOÀN 100%! Đã hồi phục đầy máu.</div>
         <button class="btn-result-close">ĐỒNG Ý</button>
@@ -635,13 +671,15 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='duelDeclined')announce(`❌ ${message.opponentName} đã từ chối lời thách đấu.`);
       else if(message.type==='duelExpired')announce(`⏳ Lời thách đấu với ${message.opponentName} đã hết hạn.`);
       else if(message.type==='arenaJoined'){
-        const current=world();current.arenaActive=true;current.position.x=message.spawnX;current.position.z=message.spawnZ;current.destination=null;current.route=[];
+        const current=world();current.arenaActive=true;
         if(message.isDuel){
+          document.body.classList.add('has-active-duel');
           showDuelCountdown(()=>{
             duelTopBar.style.display='flex';
             duelTopBar.innerHTML=`⚔️ <span>ĐẤU VỚI: <b>${message.opponentName||'Đối thủ'}</b></span> <span class="duel-topbar-pot">🏆 Quỹ: ${(message.pot||0).toLocaleString()} Vàng</span>`;
           });
         }else{
+          current.position.x=message.spawnX;current.position.z=message.spawnZ;current.destination=null;current.route=[];
           announce('Đã vào võ đài! Bảo vệ 3 giây. Thua không mất đồ.');
         }
         refreshActivities();
@@ -649,6 +687,7 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='arenaLeft'){
         world().arenaActive=false;world().arenaStunUntil=0;world().arenaTargets=[];
         duelTopBar.style.display='none';
+        document.body.classList.remove('has-active-duel');
         refreshActivities();
       }
       else if(message.type==='arenaControl'){world().arenaStunUntil=Date.now()+Math.max(0,Math.min(2000,message.duration||0));}
@@ -724,11 +763,14 @@ export function initOnline(game:GameBridge) {
     revision=session.revision||0;try{const raw=localStorage.getItem(`cute-game-actions-${account.id}`),cached=raw?JSON.parse(raw):null;if(Array.isArray(cached))actionQueue=cached.filter(job=>job&&typeof job.requestId==='string'&&typeof job.type==='string'&&job.rulesVersion===1&&Number.isSafeInteger(job.expectedRevision)).slice(0,100);}catch{/* Keep this account's in-memory queue if storage is unavailable. */}
     game.setPersistence(queueSave);game.setActionHandler(queueAction);game.applyState(session.profile);connect();render();void flushSave();announce('Welcome, {name}. Your online adventure is ready.',{name:account.name});
   }
+  const REMEMBER_AUTH_KEY = 'cute-game-remember-auth';
+  const loginListeners: ((session: Session) => void)[] = [];
   async function signOut(){
     const originalEpoch=sessionEpoch;await flushSave();if(sessionEpoch!==originalEpoch)return;if(pendingSave()){announce('Your latest progress is still waiting to save. Reconnect before signing out.');return;}
     stopped=true;const epoch=sessionEpoch;
     try{await api('auth/logout',{});if(sessionEpoch!==epoch)return;}catch(error){if(sessionEpoch!==epoch)return;if((error as {status?:number}).status===401){expireSession();return;}stopped=false;announce((error as Error).message);return;}
     sessionEpoch++;
+    try{localStorage.removeItem(REMEMBER_AUTH_KEY);}catch{}
     clearChat();stopped=true;if(reconnect)clearTimeout(reconnect);if(saveTimer)clearTimeout(saveTimer);socket?.close();socket=null;account=null;host=null;party=null;visiting=null;players.clear();authority(null);world().clearRemotePlayers();
     game.setVisiting(null);game.setPersistence(null);game.setActionHandler(null);const state=offline||game.getOfflineState();if(state)game.applyState(state);setSaveStatus('● Saved on this device');status='Play together';refreshButton();render();announce('Your offline adventure is restored.');
   }
@@ -748,8 +790,27 @@ export function initOnline(game:GameBridge) {
       const form=el('form','social-auth');const username=labeledInput('Username','text','username'),password=labeledInput('Password','password','password');username.input.autocomplete='username';username.input.pattern='[a-zA-Z0-9_]{3,24}';username.input.minLength=3;username.input.maxLength=24;password.input.autocomplete=register?'new-password':'current-password';password.input.minLength=8;password.input.maxLength=128;
       form.append(username.wrapper,password.wrapper);let display:HTMLInputElement|undefined;
       if(register){const name=labeledInput('Explorer name','text','display-name');name.input.maxLength=20;name.input.value=game.getState().name;display=name.input;form.append(name.wrapper);}
+      const rememberLabel=el('label','social-remember-label');
+      const rememberCheck=el('input');rememberCheck.type='checkbox';rememberCheck.name='remember';rememberCheck.checked=true;
+      rememberLabel.append(rememberCheck,document.createTextNode(' '+t('Ghi nhớ tài khoản (Tự động đăng nhập lần sau)')));
+      form.append(rememberLabel);
       const submit=el('button','social-primary',t(register?'Create online adventure':'Sign in'));submit.type='submit';submit.disabled=authBusy;authSubmit=submit;form.append(submit);
-      form.addEventListener('submit',async event=>{event.preventDefault();if(authBusy)return;authBusy=true;submit.disabled=true;try{begin(await api<Session>(`auth/${register?'register':'login'}`,{username:username.input.value,password:password.input.value,name:display?.value,color:game.getState().color}));}catch(error){setNotice((error as Error).message);}finally{authBusy=false;submit.disabled=false;if(authSubmit)authSubmit.disabled=false;}});
+      form.addEventListener('submit',async event=>{
+        event.preventDefault();if(authBusy)return;authBusy=true;submit.disabled=true;
+        try{
+          const uVal=username.input.value.trim(),pVal=password.input.value;
+          const session=await api<Session>(`auth/${register?'register':'login'}`,{username:uVal,password:pVal,name:display?.value,color:game.getState().color});
+          if(rememberCheck.checked){
+            try{localStorage.setItem(REMEMBER_AUTH_KEY,JSON.stringify({username:uVal,password:pVal}));}catch{}
+          }else{
+            try{localStorage.removeItem(REMEMBER_AUTH_KEY);}catch{}
+          }
+          begin(session);
+          dialog.close();
+          for(const cb of loginListeners)cb(session);
+        }catch(error){setNotice((error as Error).message);}
+        finally{authBusy=false;submit.disabled=false;if(authSubmit)authSubmit.disabled=false;}
+      });
       content.append(form,button(register?'Already have an account? Sign in':'New here? Create an adventure',()=>{register=!register;render();},'social-link'),el('p','social-small',t('Accounts are stored on this game server. No email address is needed.')));return;
     }
     for(const [id,label]of [['world','🌍 World'],['friends',`${t('👥 Friends')}${requests.length?` (${requests.length})`:''}`],['account','🏡 Account']]as const){const item=button(label,()=>{tab=id;render();});item.setAttribute('aria-pressed',String(tab===id));tabs.append(item);}
@@ -818,5 +879,55 @@ export function initOnline(game:GameBridge) {
     if(saveStatusSource)setSaveStatus(saveStatusSource);
   });
   refreshButton();
-  const initialEpoch=sessionEpoch;void api<Session>('auth/session').then(session=>{if(sessionEpoch===initialEpoch&&session.account)begin(session);}).catch(()=>{/* Offline play works without a server. */});
+  const initialEpoch=sessionEpoch;
+  const savedAuth=(()=>{
+    try{
+      const raw=localStorage.getItem(REMEMBER_AUTH_KEY);
+      return raw?JSON.parse(raw):null;
+    }catch{return null;}
+  })();
+
+  const autoLoginPromise:Promise<boolean>=(async()=>{
+    try{
+      const session=await api<Session>('auth/session');
+      if(sessionEpoch===initialEpoch&&session.account){
+        begin(session);
+        for(const cb of loginListeners)cb(session);
+        return true;
+      }
+    }catch{}
+    if(savedAuth?.username&&savedAuth?.password){
+      try{
+        const session=await api<Session>('auth/login',{
+          username:savedAuth.username,
+          password:savedAuth.password
+        });
+        if(sessionEpoch===initialEpoch&&session.account){
+          begin(session);
+          for(const cb of loginListeners)cb(session);
+          return true;
+        }
+      }catch{
+        try{localStorage.removeItem(REMEMBER_AUTH_KEY);}catch{}
+      }
+    }
+    return false;
+  })();
+
+  return {
+    openDialog:()=>{
+      render();
+      if(!dialog.open)dialog.showModal();
+    },
+    closeDialog:()=>{
+      if(dialog.open)dialog.close();
+    },
+    isLoggedIn:()=>account!==null,
+    getAccount:()=>account,
+    hasSavedAuth:()=>Boolean(savedAuth?.username&&savedAuth?.password),
+    onLogin:(cb:(session:Session)=>void)=>{
+      loginListeners.push(cb);
+    },
+    autoLoginPromise
+  };
 }

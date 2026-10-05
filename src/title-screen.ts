@@ -151,7 +151,7 @@ export function renderTitleScreen(data: TitleScreenData): string {
           <button class="primary start-button title-start-btn" data-action="start" aria-label="Bắt đầu chơi ngay">
             <div class="btn-ripple-glow"></div>
             <span class="btn-main-label">✨ CHẠM ĐỂ BẮT ĐẦU ✨</span>
-            <small class="btn-sub-label">${data.saved ? 'TIẾP TỤC HÀNH TRÌNH' : 'BẮT ĐẦU PHIÊU LƯU MỚI'} · TAP TO PLAY</small>
+            <small class="btn-sub-label">${t(data.saved ? 'Continue adventure' : 'Let’s play')} · TAP TO PLAY</small>
           </button>
         </div>
       </main>
@@ -175,8 +175,8 @@ export function renderTitleScreen(data: TitleScreenData): string {
           </div>
 
           <div class="char-name-field">
-            <label for="name-input">TÊN NHÂN VẬT CỦA BẠN</label>
-            <input id="name-input" aria-label="Your character name" maxlength="20" value="${escapeHtml(data.name || '')}" placeholder="Nhập tên nhân vật..." autocomplete="off">
+            <label for="name-input">${t('WHAT SHOULD WE CALL YOU?')}</label>
+            <input id="name-input" aria-label="Your character name" maxlength="20" value="${escapeHtml(data.name || '')}" placeholder="${t('Your name')}" autocomplete="off">
           </div>
 
           <fieldset class="color-picker-box">

@@ -188,13 +188,7 @@ app.innerHTML = `
     <div class="space-help">Hold to steer <i>•</i> <kbd>W</kbd> <kbd>A</kbd> <kbd>D</kbd> fly <i>•</i> <kbd>Shift</kbd> boost <i>•</i> <kbd>S</kbd> brake <i>•</i> <kbd>L</kbd> land</div>
   </div>
   <div id="warp-flash"></div>
-  <div id="title-screen"></div>
-  <div id="dialog-layer" hidden><section id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header><span id="dialog-icon" aria-hidden="true"></span><div><span id="dialog-kicker" class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="dialog-title"></h2></div><button class="close-button" data-action="close" aria-label="Close dialog">×</button></header><div id="dialog-body"></div></section></div>
-  <div id="toasts" role="status" aria-live="polite"></div><div id="floating-text"></div><div id="damage-flash"></div>
-`;
-const titleScreenMount = document.getElementById('title-screen');
-if (titleScreenMount) {
-  titleScreenMount.innerHTML = renderTitleScreen({
+  <div id="title-screen">${renderTitleScreen({
     saved: !!saved,
     name: saved?.name ?? '',
     color: state.color,
@@ -204,8 +198,10 @@ if (titleScreenMount) {
     hatId: state.gear.hat,
     petId: state.gear.pet,
     languageSelectorHtml: languageSelector('welcome'),
-  });
-}
+  })}</div>
+  <div id="dialog-layer" hidden><section id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header><span id="dialog-icon" aria-hidden="true"></span><div><span id="dialog-kicker" class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="dialog-title"></h2></div><button class="close-button" data-action="close" aria-label="Close dialog">×</button></header><div id="dialog-body"></div></section></div>
+  <div id="toasts" role="status" aria-live="polite"></div><div id="floating-text"></div><div id="damage-flash"></div>
+`;
 const refreshStaticLanguage=bindLanguage(app), refreshWorldLanguage=bindLanguage($('#world'));
 // Keep the first visit on a loading screen until the shared character and world models
 // have either loaded or exhausted their quick retries. Failed optional art keeps its fallback.
@@ -407,8 +403,14 @@ function hallOfFame(){
   `,'ĐẤU TRƯỜNG LA MÃ','🏆');
 }
 // The Mirror docks with 'trying-on' even before a preview (look-shop.ts), so closing always clears it: a later panel or confirmation must not inherit it.
+let onlineService: ReturnType<typeof initOnline> | null = null;
 function closeDialog(){endTryOn();$('#dialog-layer').classList.remove('trying-on');modal='';bagMode='bag';$('#dialog-layer').hidden=true;$('#hud').inert=false;$('#world-labels').inert=false;lastFocused?.focus();movement.clear();}
-async function start() {playStartChime();settle();showTrimNote();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;world.cameraFocus=null;const titleScreenEl=$('#title-screen');titleScreenEl.style.transition='opacity 0.4s ease';titleScreenEl.style.opacity='0';titleScreenEl.style.pointerEvents='none';setTimeout(()=>{titleScreenEl.hidden=true;},400);$('#hud').hidden=false;void world.renderer.compileAsync(world.scene,world.camera).catch(()=>{}); // warm the village's shaders off the first walk
+async function start() {
+  if (getActiveMode() === 'online' && onlineService && !onlineService.isLoggedIn()) {
+    onlineService.openDialog();
+    return;
+  }
+  playStartChime();settle();showTrimNote();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;world.cameraFocus=null;const titleScreenEl=$('#title-screen');titleScreenEl.style.transition='opacity 0.4s ease';titleScreenEl.style.opacity='0';titleScreenEl.style.pointerEvents='none';setTimeout(()=>{titleScreenEl.hidden=true;},400);$('#hud').hidden=false;void world.renderer.compileAsync(world.scene,world.camera).catch(()=>{}); // warm the village's shaders off the first walk
   applyMovePad();save();updateHud();updateLabels();const mode=getActiveMode();if(mode==='offline'){toast('Chế độ Chơi Đơn (Offline): Tự do khám phá không cần mạng!','🏡');}else{toast(saved?t('Welcome back, {name}. Your garden missed you!',{name:state.name}):'Chào mừng bạn đến với Zoo Garden!','✨');}showZone('Clover Village');}
 
 /** Beds that ripened while the game was closed: the helper harvests and replants each once (helper.ts catchUp). */
@@ -1686,7 +1688,7 @@ function frame(now:number){frameTime=frameTime*.9+(now-previous)*.1;const realDt
   // browser throttles rendering, and collisions do not tunnel at a low frame rate. At most four steps
   // run per frame; a longer stall turns into slow motion rather than a spiral of ever longer frames.
   updateContextWeapon();joystick.update();
-  if(!started){
+  if(!started && typeof Vector3 !== 'undefined'){
     const t=performance.now()*0.00035;
     world.cameraFocus=new Vector3(Math.cos(t)*15,1.2,Math.sin(t)*15);
   }
@@ -1713,8 +1715,12 @@ requestAnimationFrame(frame);
 document.addEventListener('click', e => {
   const modeCard = (e.target as HTMLElement).closest<HTMLElement>('.mode-card');
   if (modeCard && modeCard.dataset.mode) {
-    setActiveMode(modeCard.dataset.mode as 'online' | 'offline');
+    const chosen = modeCard.dataset.mode as 'online' | 'offline';
+    setActiveMode(chosen);
     tone('click');
+    if (chosen === 'online' && onlineService && !onlineService.isLoggedIn()) {
+      onlineService.openDialog();
+    }
   }
 });
 
@@ -1733,7 +1739,18 @@ onLanguageChange(()=>{
   if(modal==='settings'){settings();$<HTMLSelectElement>('#language-settings').focus({preventScroll:true});}
   else if(modal==='bag')inventory();else if(modal==='quests')quests();else if(modal==='shop')shop();else if(modal==='sell')market();else if(modal==='chest')storage();else if(modal==='upgrade')upgrades();else if(modal==='cook')cooking();else if(modal==='craft')crafting();else if(modal==='forge')forgeMenu();else if(modal==='decor')decorations();else if(modal==='map')map();else if(modal==='travel')planets();else if(modal==='help')help();else if(modal==='pen')penDialog();else if(modal==='helper')helperDialog();else if(modal==='farm-helper')farmHelperDialog();
 });
-initOnline(gameBridge);
+const online = initOnline(gameBridge);
+onlineService = online;
+online.onLogin(() => {
+  if (!started) {
+    void start();
+  }
+});
+online.autoLoginPromise.then(loggedIn => {
+  if (loggedIn && !started) {
+    void start();
+  }
+});
 initPlatform(message=>toast(message));
 // Development builds expose the game to browser tests; production builds leave this out.
 if(import.meta.env.DEV||import.meta.env.VITE_PERF_HOOK)Object.assign(window,{__zoo:{world,panel:(type:string)=>{if(type==='wardrobe'){bagMode='wardrobe';inventory();}else({bag:inventory,shop,upgrade:upgrades,looks:()=>lookShop.open(),sell:market,travel:planets,map,quests,settings,help,craft:crafting,cook:cooking,chest:storage} as Record<string,()=>void>)[type]?.();},house,bench,combat,skill,challenges,keysGuide,startChallenge:(type:string)=>perform('startChallenge',{kind:type}),get cooldowns(){return cooldowns;},lookShop,drops,crew,fishingView,huntingView,guardianView,helperView,farmHelperView,get fishGame(){return fishGame;},get state(){return state;},planets,launch,flyHome,get flight(){return flight;},spaceView,toast,showZone,dialogs:{shop,market,inventory,settings,quests,help,map,upgrades,crafting,decorations,storage,cooking,forgeMenu,testerShop}}});

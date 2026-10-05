@@ -757,4 +757,6 @@ Object.assign(VI_CATALOG, {
   'Arrows: move · Q/W/E/R: skills · J: journal':'Mũi tên: di chuyển · Q/W/E/R: kỹ năng · J: nhật ký',
   'WASD to move':'WASD để di chuyển',
   'Journal · {key}':'Nhật ký · {key}',
+  'Arena Hall of Fame':'Bảng Vàng Đấu Trường',
+  'PvP Fighter Shop':'Tiệm Đấu Sĩ PvP',
 });

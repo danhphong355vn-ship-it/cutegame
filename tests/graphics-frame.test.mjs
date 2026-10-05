@@ -31,6 +31,7 @@ function fixture() {
     ship: { update: noop }, gestures: { update: noop }, joystick:{update:noop},combatTimers: { advance: noop },
     combat: { update: noop, statuses: {}, airborne: 0, projectiles: [], allies: [], pose: 'idle' },
     combatView: { update: noop }, fishingView: { update: noop, active: false }, rodTip: {}, skillFx: { update: noop, gazeAngle: () => null },
+    Vector3: class { constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} },
     uiBlocked: () => context.blocked,
     world: {
       time: 0, player: { position: { y: 0 } }, position: { x: 0, z: 0 },

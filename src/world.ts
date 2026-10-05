@@ -562,9 +562,9 @@ export class World {
       this.facing=Math.PI;
       this.addEntity('travel','Starship station','🚀',this.rocket(),0,24,2);this.obstacle(0,24,1.5);
       const fameStatue=group(cyl('#d4af37',1.2,1.4,.6,0,.3),box('#f6d365',.8,1.6,.8,0,1.4),box('#ffd700',1.4,.3,.4,0,2.3),cyl('#ffe066',.6,.4,.8,0,2.3));
-      this.addEntity('halloffame','Bảng Vàng Đấu Trường','🏆',fameStatue,-10,18,2);this.obstacle(-10,18,1.4);
+      this.addEntity('halloffame','Arena Hall of Fame','🏆',fameStatue,-10,18,2);this.obstacle(-10,18,1.4);
       const pvpShop=this.stall('#7b2cbf','shop');pvpShop.rotation.y=-Math.PI/4;
-      this.addEntity('shop','Tiệm Đấu Sĩ PvP','⚔️',pvpShop,10,18,2);this.obstacle(10,18,1.4);
+      this.addEntity('shop','PvP Fighter Shop','⚔️',pvpShop,10,18,2);this.obstacle(10,18,1.4);
       const brazier=(x:number,z:number)=>{const b=group(cyl('#4a3b32',.4,.5,1.2,0,.6),cyl('#ff7b00',.5,.3,.3,0,1.3),box('#ffea00',.2,.4,.2,0,1.5));b.position.set(x,0,z);this.root.add(b);this.obstacle(x,z,.6);};
       brazier(-4,18);brazier(4,18);brazier(-6,12);brazier(6,12);
     }else{

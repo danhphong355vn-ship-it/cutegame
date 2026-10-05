@@ -114,13 +114,14 @@ test('1v1 Wager Duel: challenge, bet deduction, colosseum teleport, 1v1 lock, an
   assert.equal(bArena.bet, 500);
   assert.equal(bArena.pot, 1000);
 
-  // 6. Spawn positions are symmetric on Colosseum (-7, 0) and (7, 0)
-  assert.equal(aArena.spawnX, -7);
-  assert.equal(bArena.spawnX, 7);
+  // 6. Players keep their current planet and coordinates (no forced arena teleport)
+  assert.equal(aArena.planet, 'home');
+  assert.equal(bArena.planet, 'home');
 
   // 7. Wait 3.5s immunity countdown, then Alice approaches Bob and attacks
   await new Promise(res => setTimeout(res, 3600));
-  host.send({ type: 'pose', x: 6.5, z: 0 });
+  host.send({ type: 'pose', x: 0.1, z: 0.1 });
+  peer.send({ type: 'pose', x: 0.2, z: 0.2 });
   await new Promise(res => setTimeout(res, 100));
   host.send({ type: 'basic' });
 
@@ -142,4 +143,63 @@ test('1v1 Wager Duel: challenge, bet deduction, colosseum teleport, 1v1 lock, an
   assert.equal(finalBob.profile.energy, 500);
   assert.equal(finalAlice.arenaStats.wins, 1);
   assert.equal(finalBob.arenaStats.losses, 1);
+});
+
+test('1v1 Wager Duel: running into house results in immediate forfeit', async t => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'zoo-garden-duel-forfeit-'));
+  const store = await createAccountStore({ dataDir, databaseUrl: '' });
+  const game = await createGameServer({ port: 0, dataDir, accountStore: store, databaseUrl: '', databaseRequired: false });
+  const clients = [];
+  t.after(async () => {
+    for (const c of clients) c.socket.terminate();
+    await game.close();
+  });
+
+  async function registerExplorer(username, initialEnergy = 1000) {
+    const res = await fetch(game.url + '/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: 'password-123', name: username.toUpperCase() })
+    });
+    assert.equal(res.status, 200);
+    const session = await res.json();
+    const cookie = res.headers.get('set-cookie').split(';')[0];
+    await store.command({
+      actorId: session.account.id,
+      requestId: randomUUID(),
+      hash: 'a'.repeat(64),
+      expectedRevision: session.revision,
+      actionType: 'testFixture',
+      run: records => {
+        const profile = records.get(session.account.id).profile;
+        profile.energy = initialEnergy;
+        return true;
+      }
+    });
+    const client = await connect(game.url, cookie);
+    clients.push(client);
+    await client.next(m => m.type === 'joined');
+    return Object.assign(client, { id: session.account.id });
+  }
+
+  const host = await registerExplorer('player_a', 1000);
+  const peer = await registerExplorer('player_b', 1000);
+
+  host.send({ type: 'duelChallenge', targetId: peer.id, bet: 100 });
+  await peer.next(m => m.type === 'duelInvite');
+  peer.send({ type: 'duelAccept', fromId: host.id });
+  await host.next(m => m.type === 'arenaJoined');
+  await peer.next(m => m.type === 'arenaJoined');
+
+  // Player B runs into the house (indoor pose height >= 25 or cottage door)
+  peer.send({ type: 'pose', x: 0, z: -8, y: 40 });
+
+  // Player A should win by forfeit ('house'), Player B should lose by forfeit ('house')
+  const aWin = await host.next(m => m.type === 'arenaResult' && m.won && m.forfeit);
+  const bLoss = await peer.next(m => m.type === 'arenaResult' && !m.won && m.forfeit);
+
+  assert.equal(aWin.won, true);
+  assert.equal(aWin.reason, 'house');
+  assert.equal(bLoss.won, false);
+  assert.equal(bLoss.reason, 'house');
 });
