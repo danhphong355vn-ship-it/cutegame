@@ -523,3 +523,30 @@ test('monsters do not target or damage players while dueling', () => {
   const targetAfterDuel = (w as any).enemyTarget(enemy);
   assert.ok(targetAfterDuel);
 });
+
+test('host dragon windups survive delayed authority echoes and still alternate normal attacks with skills',()=>{
+ const w=world();w.planet='lava';w.environment=new EnvironmentSimulation(createEnvironmentLayout('lava'));w.networkRole='host';w.authoritativeAction=true;
+ const e=w.spawnSpecies('dragon',48,-50,0)!;w.position.set(50,0,-50);e.scaled=true;let hits=0;w.onDamage=()=>hits++;
+ const old=w.enemySnapshots().find(s=>s.id===e.id)!;
+ const ai=(dt:number)=>(w as unknown as {updateEnemyAi(e:typeof e,dt:number):void}).updateEnemyAi(e,dt);
+ ai(.025);assert.equal(e.phase,'windup');assert.equal(e.attackCount,1);
+ w.applyEnemySnapshots([old]);assert.equal(e.attackCount,1,'old echo must not roll back the attack sequence');
+ for(let i=0;i<180;i++){w.time+=.025;ai(.025);}
+ assert.ok(hits>0,'normal attack must reach the player');assert.ok((e.attackCount??0)>=2);assert.ok((e.skillCount??0)>=1,'dragon must reach its special attack');
+ const skill=e.skill,count=e.attackCount,cooldown=e.cooldown;
+ w.applyEnemySnapshots([old]);assert.equal(e.skill,skill);assert.equal(e.attackCount,count);assert.equal(e.cooldown,cooldown);
+});
+
+test('peer dragon snapshots still apply cast and recovery state',()=>{
+ const w=world();w.planet='lava';w.environment=new EnvironmentSimulation(createEnvironmentLayout('lava'));w.networkRole='peer';
+ const e=w.spawnSpecies('dragon',48,-50,0)!;
+ w.applyEnemySnapshots([{id:e.id,type:'dragon',x:49,z:-50,hp:100,maxHp:200,respawn:0,phase:'windup',phaseTime:.8,skill:'rain',attackCount:2,skillCount:1,cooldown:1.5}]);
+ assert.equal(e.phase,'windup');assert.equal(e.skill,'rain');assert.equal(e.attackCount,2);assert.equal(e.cooldown,1.5);
+});
+test('ambient volcano dragon expiry does not dismiss an admin world boss',()=>{
+ const w=world();w.planet='lava';w.environment=new EnvironmentSimulation(createEnvironmentLayout('lava'));let cycle=0;while(lavaEvent(cycle*360).id!=='dragon')cycle++;
+ const boss=w.spawnSpecies('dragon',48,-50,0)!;boss.id='lava:worldboss:regression';
+ w.applyEnemySnapshots([{id:boss.id,type:'dragon',x:48,z:-50,hp:boss.hp,maxHp:boss.maxHp,respawn:0,worldBoss:true}]);
+ w.environment.time=cycle*360+239.9;w.update(.01,true,false);w.update(.2,true,false);
+ assert.ok(boss.hp>0);assert.ok(boss.mesh.visible);
+});
