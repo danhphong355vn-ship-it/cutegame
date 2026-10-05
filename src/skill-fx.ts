@@ -200,7 +200,11 @@ export class SkillFx {
       if (fade <= 0) { g.live = false; g.band.visible = false; continue; }
       const model = g.model && g.model.parent ? g.model : null;
       const angle = g.angle + g.rate * Math.min(.05, this.time - g.seen), ox = model ? model.position.x : g.x, oz = model ? model.position.z : g.z;
-      if (model) eyePoints(model, this.eyeL, this.eyeR);
+      if (model) {
+        const head = part(model, 'head');
+        if (head) head.rotation.set(-.06, Math.max(-1.2, Math.min(1.2, wrap(angle - model.rotation.y))), 0);
+        eyePoints(model, this.eyeL, this.eyeR);
+      }
       else { const sx = Math.cos(angle) * .18, sz = -Math.sin(angle) * .18, fx = Math.sin(angle) * .46, fz = Math.cos(angle) * .46, y = this.host.ground(ox, oz) + 1.33; this.eyeL.set(ox + fx + sx, y, oz + fz + sz); this.eyeR.set(ox + fx - sx, y, oz + fz - sz); }
       this.origin.x = ox; this.origin.z = oz; gazeEnds(this.origin, angle, this.ends);
       const fx = Math.sin(angle), fz = Math.cos(angle), cx = ox + fx * GAZE.length, cz = oz + fz * GAZE.length, gy = this.host.ground(cx, cz) + .06;

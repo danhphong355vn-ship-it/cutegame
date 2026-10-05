@@ -986,6 +986,7 @@ export class World {
       const flying=(remote.pose.visual?.flight??0)>0;
       stepGait(g,!flying&&moving?Math.max(u.speed,1.5)*dt:0,dt,leg);
       if(l.legL)l.legL.rotation.x=0;if(l.legR)l.legR.rotation.x=0;if(l.armL)l.armL.rotation.set(0,0,-.3);if(l.armR)l.armR.rotation.set(0,0,.3);
+      const costumeHead=part(m,'head');costumeHead?.rotation.set(0,0,0);
       const bob=flying?0:applyGait(l,g,gaitSwing(u.speed,leg)),body=m.children[0];if(body)body.position.y=bob;
       if(u.flurryHits>0&&u.flurryHits<6){u.flurryElapsed=(u.flurryElapsed??0)+dt;
         while(u.flurryHits<6&&u.flurryElapsed>=u.flurryHits*.14){u.attackT=.25;u.punchArm=(u.punchArm??0)^1;u.flurryHits++;}
