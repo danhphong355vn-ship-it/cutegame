@@ -3,11 +3,11 @@
 Status: DONE
 
 Task:
-Xây dựng Đấu Trường Võ Đài 3D hoàn chỉnh (Arena 3D Stadium): sàn đá bát giác riêng biệt, 8 cột trụ giác đấu, đuốc lửa cháy rực rỡ, 3 tầng dây đài neon phát sáng 3D rõ nét, dọn sạch địa hình đá/cây thừa trong lòng võ đài và hiệu ứng kết giới PvP.
+Chỉnh sửa bề mặt đứng võ đài phẳng ngang chân nhân vật (sửa lỗi đứng xuyên/chìm chân), loại bỏ toàn bộ quặng/đá/vật thể trong lòng võ đài, và ngăn quái vật xâm nhập vào võ đài.
 
 Claimed files:
 
-Last commit: b8178a7
+Last commit: 84e2484
 
 Notes:
-Hoàn thành tạo module src/arena-view.ts và tích hợp vào src/online.ts. Test và build pass 100%. Antigravity giải phóng claimed files.
+Hoàn thành hạ mặt sàn võ đài ngang đúng bàn chân nhân vật (y ≈ 0.02), tự động dọn sạch quặng (ores/entities) và vật cản trong lòng đài, đẩy lùi toàn bộ quái vật ra ngoài ranh giới võ đài. Toàn bộ 36/36 test pass, build 100%. Antigravity giải phóng claimed files.
