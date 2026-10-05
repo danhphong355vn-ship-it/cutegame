@@ -154,6 +154,7 @@ export class World {
   private progressPending=new Set<string>();private titanView?:TitanAttackView;
   environment!:EnvironmentSimulation;environmentView!:EnvironmentView;movementLocked=false;/** In the village or the cottage and hurt: home-care.ts heals 4x, the HUD shows a chip. */ homeRecovering=false;playerFlying=false;playerStealth=false;
   arenaActive=false;arenaStunUntil=0;arenaTargets:{id:string;x:number;z:number;hp:number;maxHp:number;radius:number}[]=[];
+  isVisiting=false;
   isPlayerDueled?:(id:string)=>boolean;
   networkRole:'host'|'peer'|null=null;remotePlayers=new Map<string,{mesh:T.Group;pose:RemotePose}>();remoteRoot=new T.Group();
   onRemoteDamage:(id:string,amount:number,source?:'melee'|'shot'|'hazard',enemyId?:string)=>void=()=>{};
@@ -397,6 +398,28 @@ export class World {
     ship.name='ship';ship.position.y=.2;ship.userData.rest=.2;
     return group(ship,cyl('#b7c3d1',2.45,2.65,.18,0,.09,0,32),cyl('#e3e9e8',1.95,1.95,.03,0,.2,0,32));
   }
+  airship(){
+    const basket=box('#8b5a2b',1.3,.8,1.3,0,.45);
+    const rope1=cyl('#d2b48c',.03,.03,1.7,-.55,1.4,-.55);
+    const rope2=cyl('#d2b48c',.03,.03,1.7,.55,1.4,-.55);
+    const rope3=cyl('#d2b48c',.03,.03,1.7,-.55,1.4,.55);
+    const rope4=cyl('#d2b48c',.03,.03,1.7,.55,1.4,.55);
+    const balloon=ball('#ff4757',1.7,0,3.1,0);
+    const stripe=cyl('#feca57',1.72,1.72,.4,0,3.1);
+    const flag=box('#54a0ff',.5,.3,.04,0,4.9,0);
+    return group(basket,rope1,rope2,rope3,rope4,balloon,stripe,flag);
+  }
+  archGate(ownerName='Bạn bè'){
+    const postL=cyl('#6d4c41',.16,.16,3.4,-1.8,1.7,0);
+    const postR=cyl('#6d4c41',.16,.16,3.4,1.8,1.7,0);
+    const beam=box('#8d6e63',4.0,.35,.4,0,3.3,0);
+    const sign=box('#ffeaa7',3.2,.75,.12,0,2.5,0);
+    const vine1=ball('#2ed573',.35,-1.6,3.3,.1);
+    const vine2=ball('#2ed573',.35,1.6,3.3,.1);
+    const flower1=ball('#ff4757',.2,-1.3,3.4,.15);
+    const flower2=ball('#ff9ff3',.2,1.3,3.4,.15);
+    return group(postL,postR,beam,sign,vine1,vine2,flower1,flower2);
+  }
   /** The starship on this world's pad, with its flame and resting height, for launches and landings. */
   launchRocket(){
     // Outdoor list: launched from the cottage's globe, this.entities is the interior's.
@@ -533,6 +556,13 @@ export class World {
       this.addEntity('chest','Storage chest','📦',chest,-3.3,-4.9,1);this.obstacle(-3.3,-4.9,.6);
       this.addEntity('upgrade','Energy crystal','💎',this.crystal(),8.5,-7,1.5);this.obstacle(8.5,-7,1.4);
       this.addEntity('travel','Starship station','🚀',this.rocket(),13.5,-3,2);this.obstacle(13.5,-3,1.5);
+      if(this.isVisiting){
+        this.addEntity('visit-gate',`Cổng Về Nhà · Nông trại của ${this.state.name}`,'🚪',this.archGate(this.state.name),0,17.5,2.2);
+        this.obstacle(0,17.5,1.2);
+      } else {
+        this.addEntity('friend-airship','Khí cầu Thăm Bạn','🎈',this.airship(),14.5,-9,2);
+        this.obstacle(14.5,-9,1.3);
+      }
       const forge=group(box('#a89e8c',1.8,.8,1.2,0,.4),box('#677b7d',1.1,.25,.65,0,1),cyl('#708384',.4,.25,.5,0,.75),box('#bd9673',.2,1.1,.2,.7,.75));
       this.addEntity('craft','Workshop','🔨',forge,5.5,6.5,1.3);this.obstacle(5.5,6.5,1.1);
       const cook=group(cyl('#71646b',1.2,.8,1.1,0,.55),cyl('#fc9b51',.7,.7,.12,0,1.12),box('#49454e',1.8,.12,.15,0,1.3));this.addEntity('cook','Volcano kitchen','🔥',cook,1,10.5,1.4);this.obstacle(1,10.5,1);
