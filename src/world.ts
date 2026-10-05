@@ -13,7 +13,7 @@ import { buildGround } from './ground.ts';
 import { buildPond } from './pond-view.ts';
 import { circlesAt, holdsHero, ignoreRetarget, nearRay, pickCircle, pickScale, RAYCAST_ONLY, type PickCircle } from './picking.ts';
 import * as T from 'three';
-import { poseCostume, poseFlight, animateCostume, motionDuration, type CostumeMotion } from './costume-motion.ts';
+import { poseCostume, smoothFlight, prepareCostume, animateCostume, motionDuration, type CostumeMotion } from './costume-motion.ts';
 import { manageSceneMatrices, updateSceneMatrices } from './scene-matrices.ts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { keepAlive } from './dispose-tree.ts';
@@ -717,7 +717,7 @@ export class World {
     if(kitDisguise)this.wearKit(c,id,'body');
     if(gear.weapon&&!this.wearKit(c,gear.weapon,'hand-right'))this.simpleWeapon(c,gear.weapon);
     if(gear.pet){const pet=this.petFor(gear.pet);pet.name='remote-pet';pet.position.set(-1,0,-.6);c.add(pet);}
-    addOutlines(c,{merge:true});
+    prepareCostume(c);addOutlines(c,{merge:true});
     return c;
   }
   private simpleHat(c:T.Object3D,hat:string){
@@ -1011,11 +1011,10 @@ export class World {
         else if(u.actionPose==='bless'){l.armL?.rotation.set(-1.5,0,-.8);l.armR?.rotation.set(-1.5,0,.8);}
         if(['dive','throw','bless','gaze','charm','roots'].includes(u.actionPose)){const action=poseCostume({...l,head:part(m,'head')},u.actionPose,u.actionT);u.actionLift=action.lift;u.costumeLean=action.lean;}else u.costumeLean=0;
       }
-      // The transmitted pose.y includes flight height; only add a small visual hover.
-      if(flying){l.legL?.rotation.set(moving?.18:.12,0,-.12);l.legR?.rotation.set(moving?-.12:.12,0,.12);u.actionLift+=Math.sin(this.time*4)*.07;
-        if((u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0){l.armL?.rotation.set(moving?-1.35:-.25,0,-.28);l.armR?.rotation.set(moving?-1.35:-.25,0,.28);}}
-      if(flying&&(u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0){const flight=poseFlight(l,remote.pose.gear?.disguise==='dz_fairy',moving,this.time);u.costumeLean=flight.lean;}
-      m.rotation.x=flying&&moving?(remote.pose.gear?.disguise==='dz_fairy'?.14:Math.PI/6):(u.actionT>0?u.costumeLean??0:0);
+      // Network position already includes altitude; blend only the stance and visual bob.
+      const flight=smoothFlight(m,l,remote.pose.gear?.disguise==='dz_fairy',flying,moving,this.time,dt,(u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0);
+      m.rotation.x=(u.actionT>0?u.costumeLean??0:flight.lean);
+      u.actionLift+=flight.lift;
       animateCostume(m,remote.pose.gear?.disguise,flying,moving,this.time);
       m.position.y+=(u.actionLift??0);
       // Their pet waits at their own pen while they are in the safe village (pet-pen.ts): it is drawn beside them only away from it.
@@ -1716,7 +1715,7 @@ export class World {
     const names={home:'Clover Village',forest:'Mushroom Forest',meadow:'Blue Lake Meadow',swamp:'Chomper Swamp',canyon:'Redrock Canyon'},zone=this.planet==='home'?names[zoneAt(this.position)]:PLANETS[this.planet].name;
     if(zone!==this.lastZone&&!this.interior){this.lastZone=zone;this.onZone(zone);} // indoors x/z are the cottage's: no village zone banner
     // Home heals 4x faster (home-care.ts); this line had slipped into the comment above, so offline the village never healed.
-    this.homeRecovering=atHome(this.planet,this.position,!!this.interior)&&this.state.hp>0&&this.state.hp<stats.maxHp;if(!this.authoritativeAction&&active&&this.homeRecovering)this.state.hp=Math.min(stats.maxHp,this.state.hp+homeRecoveryBonus(stats.regen)*dt);
+    this.homeRecovering=atHome(this.planet,this.position,!!this.interior)&&this.state.hp>0&&this.state.hp<stats.maxHp;if(!this.authoritativeAction&&active&&this.homeRecovering)this.state.hp=Math.min(stats.maxHp,this.state.hp+homeRecoveryBonus(stats.regen)*dt+stats.maxHp*0.1*dt);
     this.player.position.copy(this.position);this.player.rotation.y=this.facing;this.player.scale.setScalar((this.playerSizeScale>1?this.playerSizeScale:stats.sizeScale)*HERO_SCALE);this.applyAvatarVisual(this.player,this.visualSnapshot());
     // The companion waits by the pen at home and trails behind and to one side away from it; flyers hover and flap, walkers hop.
     (this.petPen??=new PetCompanion()).update(this,dt);
@@ -1824,10 +1823,9 @@ export class World {
       else if(motion==='bless'){armL?.rotation.set(-1.5,0,-.8);armR?.rotation.set(-1.5,0,.8);lift+=.08;}
       if(['dive','throw','bless','gaze','charm','roots'].includes(motion)){const action=poseCostume({armL,armR,legL,legR,head},motion,this.disguiseT);lean=action.lean;lift+=action.lift;}
     }
-    if(this.playerFlying){legL?.rotation.set(this.moving?.18:.12,0,-.12);legR?.rotation.set(this.moving?-.12:.12,0,.12);lift+=Math.sin(this.time*4)*.07;
-      if(this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose){armL?.rotation.set(this.moving?-1.35:-.25,0,-.28);armR?.rotation.set(this.moving?-1.35:-.25,0,.28);lean=this.moving?Math.PI/6:0;}}
-    // Laser gaze (skill-fx.ts): the head turns with the sweep, so the beams leave the eyes along the line they hit.
-    if(this.playerFlying&&this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose){const flight=poseFlight({armL,armR,legL,legR,head},this.state.gear.disguise==='dz_fairy',this.moving,this.time);lean=flight.lean;}
+    const flight=smoothFlight(p,{armL,armR,legL,legR,head},this.state.gear.disguise==='dz_fairy',this.playerFlying,this.moving,this.time,dt,this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose);
+    if(flight.weight>1e-4)lean=flight.lean;
+    lift+=flight.lift+(flight.weight>0?(flight.air-Number(this.playerFlying))*1.7:0);
     animateCostume(p,this.state.gear.disguise,this.playerFlying,this.moving,this.time);
     const gaze=this.gazeAngle;if(head&&gaze!=null){const turn=Math.atan2(Math.sin(gaze-this.facing),Math.cos(gaze-this.facing));head.rotation.set(-.06,Math.max(-1.2,Math.min(1.2,turn)),0);}
     // Fishing: the cast swings the rod overhead and forward; reeling leans back against the line.

@@ -41,7 +41,7 @@ import { previewGear, canTryOn, autoHeld } from './try-on.ts';
 import './quick-eat.css';
 import { CombatTimers, FishingInput, MovementControls, gameplayKey, keyboardBindings, movementKey } from './gameplay-controls.ts';
 import {mountJoystick} from './joystick.ts';
-import { CombatSimulation, BASE_SKILLS, SPECIALS, type CombatHit, type CombatEffect } from './combat.ts';
+import { CombatSimulation, BASE_SKILLS, SPECIALS, attackRange, type CombatHit, type CombatEffect } from './combat.ts';
 import { skillPip } from './skill-pip.ts';
 import { skillTip, BUFF_CHIPS } from './skill-info.ts';
 import { skillSound } from './skill-sounds.ts';
@@ -1264,7 +1264,18 @@ function slamImpact(){
 }
 /** Standing still near a creature, the explorer fights it automatically, as in the reference. */
 function autoAttack(kind:string){
-  if(!started||uiBlocked()||visiting||fishGame||placement||kind==='rod'||world.selected||world.destination||world.route.length||world.moving||world.keys.size||combat.locksMovement||combatTimers.attackCooldown>0)return;
+  if(!started||uiBlocked()||visiting||fishGame||placement||kind==='rod'||combat.locksMovement||combatTimers.attackCooldown>0)return;
+  if(world.arenaActive){
+    if(Date.now()<world.arenaStunUntil)return;
+    const weapon=M.weaponStats(state);
+    const p=world.position;
+    const opp=world.arenaTargets.find(t=>t.hp>0&&Math.hypot(t.x-p.x,t.z-p.z)<=attackRange(weapon,t.radius));
+    if(opp){
+      basicAttack(opp as any);
+    }
+    return;
+  }
+  if(world.selected||world.destination||world.route.length||world.moving||world.keys.size)return;
   const reach=kind==='gun'?6:2.4,p=world.position;
   let best:Enemy|null=null,bestDistance=Infinity;
   for(const e of world.enemies){if(e.hp<=0||!e.mesh.visible)continue;const d=Math.hypot(e.x-p.x,e.z-p.z)-e.radius;if(d<reach&&d<bestDistance){best=e;bestDistance=d;}}
@@ -1321,7 +1332,7 @@ function endTryOn(){if(!tryingOn&&!world.tryOnGear&&!world.tryOnLook)return;tryi
 function basicAttack(e?:Enemy){
   if(!started||uiBlocked()||visiting||combatTimers.attackCooldown>0)return;
   if(world.arenaActive&&Date.now()<world.arenaStunUntil)return;
-  const arenaOpp=world.arenaActive?(world.arenaTargets.find(t=>Math.hypot(t.x-world.position.x,t.z-world.position.z)<=6)||world.arenaTargets[0]):undefined;
+  const arenaOpp=world.arenaActive?(e as any||world.arenaTargets.find(t=>Math.hypot(t.x-world.position.x,t.z-world.position.z)<=6)||world.arenaTargets[0]):undefined;
   if(world.arenaActive)e=arenaOpp as any;
   prepareCombatWeapon();
   if(combat.basic(e)){const stats=M.activeStats(state),weapon=M.weaponStats(state);combatTimers.attackCooldown=Math.max(.12,(weapon.cd||.5)/Math.max(.2,1+stats.haste));const volt=weapon.shot==='volt';world.playerAttack(weapon.kind,volt?'#bfefff':undefined);tone(volt?'zap':weapon.kind==='gun'?'shoot':weapon.kind==='sword'?'swing':'punch');emitAction({kind:'basic',targetId:world.arenaActive?arenaOpp?.id:e?.id});}
@@ -1348,8 +1359,9 @@ function skill(index:number){
   if(!actionHandler)change(()=>recordEvent(state,'skill'));if(disguise)world.playDisguiseAction(disguise,index);else if(index===0)world.spinT=2.2;else if(index===1)world.fx?.burst(world.position,{n:10,color:'#f3e2bd',size:.14,speed:3,up:2,y:.1});else if(index===3&&(weapon.special??'fist')==='fist')world.startPunchFlurry();tone(skillSound(index,disguise,weapon.special));emitAction({kind:'skill',index,special:disguise??weapon.special});
 }
 let dying=false;
-function checkDefeat(){if(!started||state.hp>0||dying)return false;if(actionHandler){dying=true;void perform('die',{x:world.position.x,z:world.position.z}).then(()=>{dying=false;endFishing();resetCombat();rebuildHomePresentation('home');world.refreshPlayer();toast('You are safe at home.','🏡');});return true;}endFishing();resetCombat();change(()=>M.die(state,world.position.x,world.position.z));rebuildHomePresentation('home');world.refreshPlayer();openDialog('death','A little rest, then try again',`<div class="grow-illustration">🌷</div><p class="center">You’re safe at home. Your level, energy, and equipped gear are safe too.</p><p class="center muted">${state.dropped?'Your loose items are waiting where you fell.':'Nothing was dropped.'}</p><button class="primary wide" data-action="close">Back on my feet →</button>`,'EVERY EXPLORER TAKES A TUMBLE');return true;}
+function checkDefeat(){if(!started||state.hp>0||dying||world.arenaActive)return false;if(actionHandler){dying=true;void perform('die',{x:world.position.x,z:world.position.z}).then(()=>{dying=false;endFishing();resetCombat();rebuildHomePresentation('home');world.refreshPlayer();toast('You are safe at home.','🏡');});return true;}endFishing();resetCombat();change(()=>M.die(state,world.position.x,world.position.z));rebuildHomePresentation('home');world.refreshPlayer();openDialog('death','A little rest, then try again',`<div class="grow-illustration">🌷</div><p class="center">You’re safe at home. Your level, energy, and equipped gear are safe too.</p><p class="center muted">${state.dropped?'Your loose items are waiting where you fell.':'Nothing was dropped.'}</p><button class="primary wide" data-action="close">Back on my feet →</button>`,'EVERY EXPLORER TAKES A TUMBLE');return true;}
 world.onDamage=(amount,source='melee',enemyId)=>{
+  if(world.arenaActive)return;
   if(actionHandler){if(enemyId&&network.role==='host')network.reportDamage?.(enemyId,source);return;}
   if(combatTimers.invulnerable>0||combat.invulnerable||(source==='melee'&&(combat.statuses.flight??0)>0)||!started||(!network.role&&uiBlocked())||visiting)return;
   const defense=M.activeStats(state).defense+combat.defenseBonus+(combat.statuses.armor>0?80:0),damage=Math.max(1,Math.round(amount*60/(defense+60)));
@@ -1381,7 +1393,7 @@ export const gameBridge:GameBridge={
     updateHud();updateLabels();
   },
   spawnNetworkDrop,removeNetworkDrop,releaseNetworkDrop(id){for(const meta of networkDrops.values())if(meta.drop.id===id)meta.drop.releaseAt=0;},clearNetworkDrops(){networkDrops.clear();claimRetryAt.clear();foreignDropNotified.clear();drops.clear();},
-  applyAuthorityHealth(delta,died){if(delta<0){world.hurtFeedback(-delta);tone('hurt');if(fishGame)endFishing('The fish got away when you were hit.');}if(died){visiting=null;visitHome=null;world.state=state;endFishing();resetCombat();world.build(state.planet);world.refreshPlayer();closeDialog();toast('You are safe at home.','🏡');}updateHud();},
+  applyAuthorityHealth(delta,died){if(delta<0){world.hurtFeedback(-delta);tone('hurt');if(fishGame)endFishing('The fish got away when you were hit.');}if(died&&!world.arenaActive){visiting=null;visitHome=null;world.state=state;endFishing();resetCombat();world.build(state.planet);world.refreshPlayer();closeDialog();toast('You are safe at home.','🏡');}updateHud();},
   setNetworkHooks(hooks){network=hooks;world.networkRole=hooks.role;},
   applyRemoteHit(id,damage,stun=0,impact){const enemy=world.enemies.find(e=>e.id===id);if(enemy)hit(enemy,damage,stun,impact,true);},
   applyRemoteStatus(id,kind,duration){const enemy=world.enemies.find(e=>e.id===id);if(enemy)world.statusEnemy(enemy,kind,Math.min(12,duration));},
@@ -1400,7 +1412,28 @@ export const gameBridge:GameBridge={
     visiting=owner;resetCombat();closeDialog();
     if(owner&&home){visitHome={...structuredClone(state),name:home.name??state.name,planet:'home',discovered:[...(home.discovered??['home'])],plots:structuredClone(home.plots??state.plots),decorations:structuredClone(home.decorations??[]),farm:M.parseFarm((home as {farm?:unknown}).farm),helper:M.parseHelper((home as {helper?:unknown}).helper),friends:M.parseFriends((home as {friends?:unknown}).friends),bosses:M.parseBosses((home as {bosses?:unknown}).bosses),house:parseHouse((home as {house?:unknown}).house)};world.state=visitHome;rebuildHomePresentation('home');}
     else{visitHome=null;world.state=state;rebuildHomePresentation(state.planet);}
-    world.refreshPlayer();$('#visit-banner').hidden=!owner;$('#visit-banner').textContent=t(owner?t('Visiting {owner} · look around their garden',{owner}):'');updateLabels();
+    world.refreshPlayer();
+    const banner=$('#visit-banner');
+    banner.hidden=!owner;
+    if(owner){
+      banner.innerHTML=`<span>${t('Visiting {owner} · look around their garden',{owner})}</span> <button id="leave-visit-chip" style="margin-left:10px;padding:3px 10px;border-radius:12px;background:#ff4757;color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.2);">✕ Về vườn</button>`;
+      banner.querySelector('#leave-visit-chip')?.addEventListener('click',()=>gameBridge.leaveVisit?.());
+    }else{
+      banner.textContent='';
+    }
+    updateLabels();
+  },
+  leaveVisit(){
+    if(visiting){
+      visiting=null;visitHome=null;world.state=state;
+      rebuildHomePresentation(state.planet);
+      world.refreshPlayer();
+      const banner=$('#visit-banner');
+      banner.hidden=true;
+      banner.textContent='';
+      updateLabels();
+      toast('Đã trở về khu vườn của bạn 🏡');
+    }
   },
   showNotice:message=>toast(message),
   showChatBubble:(id, text)=>{
@@ -1613,7 +1646,7 @@ app.addEventListener('click',async event=>{
     case 'launch':launch();break;case 'land':case 'autopilot-skip':tryLanding();break;case 'fly-to':flyTo(button.dataset.kind as M.PlanetId);break;
     case 'go':go(button.dataset.kind!);break;
     case 'wild':{closeDialog();const destinations:Record<string,[number,number]>={forest:[-30,0],meadow:[0,30],swamp:[0,-30],canyon:[30,0]};const destination=destinations[button.dataset.kind??'forest']??[0,-30];world.walkTo(destination[0],destination[1]);toast('Follow the path beyond the garden gate.','🍄');break;}
-    case 'return-home':if(state.planet!=='home')flyHome();else{endFishing();huntingPending=null;movement.clear();closeDialog();world.position.set(0,0,0);world.destination=null;world.route=[];world.selected=null;world.pondTap=null;updateHunting(0);toast('Home, sweet home.','🏡');}break;
+    case 'return-home':if(world.arenaActive){toast('Đang trong trận quyết đấu 1v1, không thể dịch chuyển về nhà!','⚔️');break;}if(visiting){gameBridge.leaveVisit?.();break;}if(state.planet!=='home')flyHome();else{endFishing();huntingPending=null;movement.clear();closeDialog();world.position.set(0,0,0);world.destination=null;world.route=[];world.selected=null;world.pondTap=null;updateHunting(0);toast('Home, sweet home.','🏡');}break;
     case 'interact':world.interactNearest();break;case 'attack':basicAttack();break;case 'skill':skill(index);break;
     case 'fish-again':fish(fishPond);break;
     case 'reel':if(fishGame){if(event.detail===0)fishGame.input.toggle();}else if(button.classList.contains('hunt'))void throwHarpoon();else if(button.classList.contains('cast'))fish(fishPond);break;
@@ -1705,9 +1738,10 @@ function frame(now:number){frameTime=frameTime*.9+(now-previous)*.1;const realDt
   // The explorer's pose follows the weapon, skills, fishing line and hit invulnerability.
   const weaponKind=M.weaponStats(state).kind;world.weaponKind=state.gear.weapon&&M.ITEMS[state.gear.weapon]?.weapon?.kind==='rod'?'rod':state.gear.disguise?'fist':weaponKind;world.pose=combat.pose;world.invulnerable=combatTimers.invulnerable>0;world.fishTension=fishGame?.simulation.tension??0;
   autoAttack(weaponKind);
+  if(visiting&&!world.interior&&Math.hypot(world.position.x,world.position.z)>=18)gameBridge.leaveVisit?.();
   updateHunting(dt);updateGuardian(dt);
   fishingView.update(dt,world.time,fishGame||fishingView.active?tipPosition():rodTip,world.interior?FAR_AWAY:world.position,fishGame?.simulation??null);
-  costumeFx.update(dt,world.fx,[...(world.playerFlying?[{model:world.player,fairy:state.gear.disguise==='dz_fairy',moving:world.moving}]:[]),...[...world.remotePlayers.values()].filter(r=>r.mesh.visible&&(r.pose.visual?.flight??0)>0).map(r=>({model:r.mesh,fairy:r.pose.gear?.disguise==='dz_fairy',moving:!!r.pose.moving}))]);skillFx.update(dt);world.gazeAngle=skillFx.gazeAngle(world.player);
+  costumeFx.update(dt,world.fx,()=>[...(world.playerFlying?[{model:world.player,fairy:state.gear.disguise==='dz_fairy',moving:world.moving}]:[]),...[...world.remotePlayers.values()].filter(r=>r.mesh.visible&&(r.pose.visual?.flight??0)>0).map(r=>({model:r.mesh,fairy:r.pose.gear?.disguise==='dz_fairy',moving:!!r.pose.moving}))]);skillFx.update(dt);world.gazeAngle=skillFx.gazeAngle(world.player);
   if(!fishGame&&!$('#reel-button').hidden&&!$('#reel-button').classList.contains('hunt')&&(performance.now()>recastUntil||world.moving))showReel(false);
   // Resizing the WebGL canvas clears its drawing buffer. Apply automatic quality changes
   // before drawing, so the browser never presents an empty frame during a quality transition.

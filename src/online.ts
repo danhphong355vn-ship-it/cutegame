@@ -480,6 +480,15 @@ export function initOnline(game:GameBridge) {
     openPlayer(id);
   };
   world().isPlayerDueled=(id)=>(isDuelActive&&(id===activeDuelOpponent?.id||id===account?.id))||arenaPlayers.some(p=>p.id===id&&p.isDuel);
+  const origLeaveVisit = game.leaveVisit;
+  game.leaveVisit = () => {
+    if(visiting){
+      send({ type: 'leaveVisit' });
+      visiting = null;
+      game.setVisiting(null);
+    }
+    origLeaveVisit?.();
+  };
   document.addEventListener('keydown',event=>{
     if(gameplayKey(event)!=='Enter'||event.repeat||(event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"]'))return;
     if(document.querySelector('#dialog-layer:not([hidden])')||!account)return;event.preventDefault();captureChatDraft();tab='world';render();if(!dialog.open)dialog.showModal();content.querySelector<HTMLInputElement>('.social-chat-input')?.focus();
@@ -773,7 +782,7 @@ export function initOnline(game:GameBridge) {
       else if(message.type==='arenaHit'){
         duelSelfHp=message.hp;duelSelfMaxHp=message.maxHp;
         updateDuelTopBarUi();
-        const s=game.getState();s.hp=message.hp;game.updateHud?.();
+        const s=game.getState();s.hp=isDuelActive?Math.max(1,message.hp):message.hp;game.updateHud?.();
         world().hurtFeedback(message.damage);
       }
       else if(message.type==='arenaHitDealt'){
@@ -786,6 +795,11 @@ export function initOnline(game:GameBridge) {
       }
       else if(message.type==='arenaResult'){
         if(message.isDuel){
+          if(message.restoredHp){
+            const s=game.getState();
+            s.hp=message.restoredHp;
+            game.updateHud?.();
+          }
           showDuelResult(message);
         }else{
           announce(message.won?`🏆 Bạn thắng ${message.loser}!`:`Bạn thua ${message.winner}. Đồ và máu ngoài võ đài được giữ nguyên.`);
@@ -1043,6 +1057,48 @@ export function initOnline(game:GameBridge) {
       send({type:'ping',at:lastPingAt});
     }
     poseClock+=dt;enemyClock+=dt;const presence=game.getPresence();
+    if(visiting&&!world().interior&&Math.hypot(presence.x,presence.z)>=18){
+      game.leaveVisit?.();
+    }
+    if(world().arenaActive){
+      const oppId = activeDuelOpponent?.id;
+      if(isDuelActive && oppId){
+        const oppMesh = world().remotePlayers.get(oppId)?.mesh;
+        const oppPlayer = players.get(oppId);
+        const oppP = arenaPlayers.find(p=>p.id===oppId);
+        const protectedUntil = oppP?.protectedUntil ?? 0;
+        const isProtected = protectedUntil > Date.now();
+        const hp = duelOppHp > 0 ? duelOppHp : (oppP?.hp ?? 100);
+        const maxHp = duelOppMaxHp > 0 ? duelOppMaxHp : (oppP?.maxHp ?? 100);
+        const x = oppMesh ? oppMesh.position.x : (oppPlayer?.x ?? 0);
+        const z = oppMesh ? oppMesh.position.z : (oppPlayer?.z ?? 0);
+        if (!isProtected && hp > 0) {
+          world().arenaTargets = [{
+            id: `arena:${oppId}`,
+            x,
+            z,
+            hp,
+            maxHp,
+            radius: 1.2
+          }];
+        } else {
+          world().arenaTargets = [];
+        }
+      } else {
+        world().arenaTargets = arenaPlayers.filter(p=>p.id!==account?.id&&p.hp>0&&p.protectedUntil<=Date.now()&&inArena(presence.planet,p)).map(p=>{
+          const remote = world().remotePlayers.get(p.id)?.mesh;
+          const rPlayer = players.get(p.id);
+          return {
+            id: `arena:${p.id}`,
+            x: remote ? remote.position.x : (rPlayer?.x ?? p.x),
+            z: remote ? remote.position.z : (rPlayer?.z ?? p.z),
+            hp: p.hp,
+            maxHp: p.maxHp,
+            radius: .65
+          };
+        });
+      }
+    }
     if(!visiting&&presence.planet!==planet){game.setVisiting(null);planet=presence.planet;sendRoom({type:'join',planet,party});return;}
     const isMoving = !!presence.moving;
     const moved = !lastSentPose || Math.abs(presence.x - lastSentPose.x) > 0.05 || Math.abs(presence.z - lastSentPose.z) > 0.05 || Math.abs((presence.facing || 0) - (lastSentPose.facing || 0)) > 0.1 || isMoving !== lastSentPose.moving;

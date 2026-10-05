@@ -623,6 +623,7 @@ export async function createGameServer(options = {}) {
         } else if (message.type === 'pose' && room) {
           const now = Date.now(); if (now - peer.poseAt < 65) return;
           const x = number(message.x), z = number(message.z), elapsed = Math.min(5, (now - peer.poseAt) / 1000);
+          if (peer.visit && Math.hypot(x, z) >= 18) { endVisit(peer); return; }
           if(combatAuthority.arena.has(peer)&&!combatAuthority.arena.canAct(peer)){send(socket,{type:'arenaPosition',x:peer.pose.x,z:peer.pose.z});return;}
           const distance = Math.hypot(x - peer.pose.x, z - peer.pose.z);
           if (peer.poseAt && distance > 55 * elapsed + 8 && !(Math.hypot(x, z) < 2)) return;

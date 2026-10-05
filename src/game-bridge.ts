@@ -32,6 +32,7 @@ export interface GameBridge {
   applyRemoteDamage(amount:number,source?:string):void;
   applyRemoteEffect(effect:CombatEffect):void;
   setVisiting(owner:string|null,homeState?:Partial<SaveState>):void;
+  leaveVisit?():void;
   showNotice(text:string):void;
   showChatBubble?(id:string, text:string):void;
   onFrame(listener:(dt:number)=>void):()=>void;

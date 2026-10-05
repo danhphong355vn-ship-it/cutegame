@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import {VI_ONLINE} from '../src/locales/vi-online.ts';
 import {gameplayKey} from '../src/gameplay-controls.ts';
+import {ARENA,inArena} from '../src/world-events.ts';
 
 class Element {
   constructor(tag='div'){this.tagName=tag;this.children=[];this.listeners=new Map();this.attributes=new Map();this.dataset={};this.classes=new Set();this.classList={add:name=>this.classes.add(name)};this.open=false;this.style={};this.value='';this.selectionStart=null;this.selectionEnd=null;}
@@ -44,7 +45,7 @@ async function online({staticHost='true',base='/cute_game/',slotPresent=true,lan
   const exports={};
   vm.runInNewContext(await compile('online.ts',{VITE_STATIC_HOST:staticHost,BASE_URL:base}),{
     exports,document,window,
-    require:name=>{if(name==='./house.ts')return {INDOOR_Y};if(name==='./i18n.ts')return i18n;if(name==='./gameplay-controls.ts')return {gameplayKey};assert.equal(name,'./model.ts');return {};},
+    require:name=>{if(name==='./world-events.ts')return {ARENA,inArena};if(name==='./house.ts')return {INDOOR_Y};if(name==='./i18n.ts')return i18n;if(name==='./gameplay-controls.ts')return {gameplayKey};assert.equal(name,'./model.ts');return {};},
     fetch:async(url,options)=>{requests.push({url,options});return loginError&&url.endsWith('auth/login')?{ok:false,status:401,json:async()=>({error:loginError})}:{ok:true,json:async()=>session};},
     WebSocket:staticHost==='true'?class{constructor(){throw new Error('Unexpected socket connection');}}:Socket,
     localStorage:staticHost==='true'?new Proxy({},{get(){throw new Error('Static mode must not modify browser saves');}}):{getItem:()=>null,setItem(){}},
@@ -138,5 +139,5 @@ test('all refined model URLs honor a project deployment prefix',async()=>{
   const exports={};
   vm.runInNewContext(await compile('assets.ts',{BASE_URL:'/cute_game/'}),{exports,require:name=>name==='three'?{}:{GLTFLoader:class{}}});
   const paths=[...Object.values(exports.REFINED_ASSET_FILES),...Object.values(exports.KIT_FILES)];
-  assert.equal(paths.length,27);assert.equal(exports.KIT_FILES.forestBirds,'/cute_game/assets/models/forest-birds.glb');assert.ok(paths.every(url=>url.startsWith('/cute_game/assets/models/')&&url.endsWith('.glb')));
+  assert.equal(paths.length,28);assert.equal(exports.KIT_FILES.dragon,'/cute_game/assets/models/dragon.glb');assert.equal(exports.KIT_FILES.forestBirds,'/cute_game/assets/models/forest-birds.glb');assert.ok(paths.every(url=>url.startsWith('/cute_game/assets/models/')&&url.endsWith('.glb')));
 });
