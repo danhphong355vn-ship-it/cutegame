@@ -14,6 +14,16 @@ const cases=actionSwitch.caseBlock.clauses.filter(node=>['plant','fertilize','fe
 const compiled=ts.transpileModule(`${functions.join('\n')}\nasync function act(action,id){switch(action){${cases.join('\n')}}}`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('high haste basic attacks respect the server cooldown and cannot flood requests',()=>{
+  const fn=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='basicAttack').getText(ast);
+  const code=ts.transpileModule(fn,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  let attacks=0;
+  const ctx=vm.createContext({M:{activeStats:()=>({haste:100}),weaponStats:()=>({cd:.4,kind:'sword'})},state:{},started:true,visiting:null,combatTimers:{attackCooldown:0},uiBlocked:()=>false,prepareCombatWeapon(){},combat:{basic:()=>true},world:{playerAttack(){}},tone(){},emitAction(){attacks++;}});
+  vm.runInContext(code,ctx);ctx.basicAttack();assert.equal(ctx.combatTimers.attackCooldown,.12);
+  for(let i=0;i<30;i++)ctx.basicAttack();assert.equal(attacks,1);
+  ctx.M.activeStats=()=>({haste:0});ctx.combatTimers.attackCooldown=0;ctx.basicAttack();assert.equal(ctx.combatTimers.attackCooldown,.4);
+});
+
 test('the R punch flurry starts the local animation while the ground slam keeps its own pose',()=>{
   const skillSource=ast.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='skill').getText(ast);
   const code=ts.transpileModule(skillSource,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
