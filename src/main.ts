@@ -255,6 +255,24 @@ function showEffect(effect:CombatEffect){
   if(effect.kind==='toss'){world.guardDogs?.toss(effect);return;}
   if(effect.look==='eyes'&&effect.kind==='beam'){skillFx.gaze(effect);return;}
   if(effect.look==='burn'){skillFx.burn(effect);return;}
+  if(fx&&effect.look==='flower'){
+    fx.ring(at,{color:'#ffd0e9',from:Math.max(.3,effect.radius*.35),to:effect.radius,life:.5,y:.12,thick:.18});
+    fx.burst(at,{n:5,color:['#ff9ec8','#fff2a8','#baf0a2'],glow:true,size:.14,speed:Math.min(4,effect.radius),up:2,y:.45,life:.7});return;
+  }
+  if(fx&&effect.look==='hero'){
+    fx.ring(at,{color:'#96d7ff',from:.4,to:effect.radius,life:.42,y:.1,thick:.25});
+    fx.burst(at,{n:8,color:['#ffffff','#9fd7ff','#ffe19a'],glow:true,size:.16,speed:5,up:3,y:.5,life:.5});return;
+  }
+  if(fx&&effect.look==='heroDive'){
+    fx.ring(at,{color:'#ffffff',from:.5,to:effect.radius,life:.34,y:.14,thick:.42});
+    fx.ring(at,{color:'#398bd2',from:.4,to:effect.radius*.85,life:.46,y:.08,thick:.24});
+    fx.burst(at,{n:12,color:['#ffffff','#9fd7ff','#6985a6'],size:.2,speed:7,up:3,y:.25,life:.52});
+    fx.flash({x:effect.x,y:.7,z:effect.z},'#b5eaff',2,.16);return;
+  }
+  if(fx&&effect.look==='roots'){
+    fx.ring(at,{color:'#76bd6a',from:effect.radius*.8,to:effect.radius,life:.6,y:.09,thick:.3});
+    fx.burst(at,{n:4,color:['#6ead58','#b7e78e'],size:.16,speed:2,up:2,y:.2,life:.7});return;
+  }
   // Electric bursts keep the faint disc and rim at the exact blast radius, then crackle instead of the plain ring.
   if(effect.look==='shock'&&(effect.kind==='ring'||effect.kind==='impact')){if(fx&&effect.kind==='ring'&&effect.radius>=1.5){fx.ring(at,{color:effect.color,from:effect.radius,to:effect.radius,life:.42,y:.1,thick:1,opacity:.18});fx.ring(at,{color:'#d8f4ff',from:effect.radius,to:effect.radius*1.02,life:.42,y:.12,thick:.06,opacity:.9});}skillFx.shock(effect);return;}
   if(fx&&effect.kind==='arc'){const fist=effect.radius<=1.85;fx.slash(at,effect.facing??world.facing,effect.radius+.25,effect.color,fist?{arc:1.4,life:.15,thick:.4}:{arc:Math.min(6.2,effect.arc??2.2)});return;}
@@ -558,7 +576,15 @@ function plotDialog(index:number) {
   }).join('')}</div>`,'YOUR GARDEN');
 }
 function inventory() {
-  const entries = Object.entries(state.bag).filter(([id, n]) => n! > 0 && (bagMode !== 'wardrobe' || wardrobeItem(M.ITEMS[id]))) as [M.ItemId, number][];
+  const rank = (id: string) => {
+    const idx = IG.BAG_ORDER.indexOf(IG.groupOf(id));
+    return idx === -1 ? IG.BAG_ORDER.length : idx;
+  };
+  const entries = (Object.entries(state.bag).filter(([id, n]) => n! > 0 && (bagMode !== 'wardrobe' || wardrobeItem(M.ITEMS[id]))) as [M.ItemId, number][])
+    .sort(([a], [b]) => {
+      const diff = rank(a) - rank(b);
+      return diff !== 0 ? diff : a.localeCompare(b);
+    });
   const slots: [M.GearSlot, string, string][] = [
     ['weapon', '🗡️', 'Vũ khí'],
     ['hat', '🎩', 'Mũ'],
@@ -606,23 +632,26 @@ function inventory() {
     const isEquipped = slot && state.gear[slot] === selectedItem;
     let buttons = '';
     if (item.heal || item.buff) {
-      buttons += `<button class="dark-btn-eat" data-action="eat" data-item="${selectedItem}">Ăn</button>`;
-      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+      buttons += `<button class="dark-btn-eat" data-action="eat" data-item="${selectedItem}">${t('Eat')}</button>`;
+      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">${t('Drop one')}</button>`;
+    } else if (slot && autoHeld(selectedItem)) {
+      buttons += `<span class="chip">${t('Used automatically near ponds')}</span>`;
+      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">${t('Drop one')}</button>`;
     } else if (slot) {
       if (isEquipped) {
-        buttons += `<button class="dark-btn-unequip" data-action="unequip" data-slot="${slot}">Tháo ra</button>`;
+        buttons += `<button class="dark-btn-equip" data-action="equip" data-item="${selectedItem}" disabled>${t('Equipped')}</button><button class="dark-btn-unequip" data-action="unequip" data-slot="${slot}">${t('Unequip')}</button>`;
       } else {
-        buttons += `<button class="dark-btn-equip" data-action="equip" data-item="${selectedItem}">Trang bị</button>`;
-        if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+        buttons += `<button class="dark-btn-equip" data-action="equip" data-item="${selectedItem}">${t('Equip')}</button>`;
+        if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">${t('Drop one')}</button>`;
       }
     } else if (item.type === 'decor' || item.type === 'placeable') {
-      buttons += `<button class="dark-btn-equip" data-action="place-decor" data-item="${selectedItem}">Đặt</button>`;
-      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+      buttons += `<button class="dark-btn-equip" data-action="place-decor" data-item="${selectedItem}">${t('Place')}</button>`;
+      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">${t('Drop one')}</button>`;
     } else {
-      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">Vứt bỏ</button>`;
+      if (M.looseQuantity(state, selectedItem) > 0) buttons += `<button class="dark-btn-drop" data-action="drop-item" data-item="${selectedItem}">${t('Drop one')}</button>`;
     }
 
-    detailHtml = `<div class="dark-detail-card"><div class="dark-detail-hero">${art(selectedItem, item.icon)}</div><div class="dark-detail-info"><div class="dark-detail-title">${esc(t(item.name))}${M.levelTag(state, selectedItem)}</div><div class="dark-detail-sub">${cat} • Bán ⚡ ${M.sellPrice(state, selectedItem) || item.sell || 0}</div><div class="dark-detail-desc">${esc(t(item.desc))}</div>${effect ? `<div class="dark-detail-effect">${effect}</div>` : ''}<div class="dark-detail-actions">${buttons}</div></div></div>`;
+    detailHtml = `<div class="dark-detail-card item-detail"><div class="dark-detail-hero">${art(selectedItem, item.icon)}</div><div class="dark-detail-info"><div class="dark-detail-title">${esc(t(item.name))}${M.levelTag(state, selectedItem)}</div><div class="dark-detail-sub">${cat} • Bán ⚡ ${M.sellPrice(state, selectedItem) || item.sell || 0}</div><div class="dark-detail-desc">${esc(t(item.desc))}</div>${effect ? `<div class="dark-detail-effect">${effect}</div>` : ''}<div class="dark-detail-actions">${buttons}</div></div></div>`;
   }
 
   const gridItemsHtml = entries.map(([id, count]) => {
@@ -648,7 +677,7 @@ function inventory() {
   const haveStar = (state.bag[starId] || 0) + (state.chest[starId] || 0);
   const canExpand = tier < maxTier && state.energy >= costEnergy && haveWood >= costWood && haveWheat >= costWheat && haveStar >= costStar;
 
-  const expandHtml = `<div class="dark-expand-card"><div class="dark-expand-icon">🎒</div><div class="dark-expand-body"><div class="dark-expand-title">Mở rộng Túi đồ <span class="dark-expand-badge">${totalSlots} ô</span></div><div class="dark-expand-sub">Bậc ${tier + 1}/${maxTier}: thêm 4 Ô (${totalSlots} → ${totalSlots + 4}). Nguyên liệu lấy trong túi đồ.</div><div class="dark-expand-cost"><span>⚡ ${costEnergy}</span><span>🪵 ${haveWood}/${costWood}</span><span>🌾 ${haveWheat}/${costWheat}</span><span style="${haveStar < costStar ? 'color:#f87171;' : ''}">⭐ ${haveStar}/${costStar}</span></div></div><button class="dark-expand-btn" data-action="expand-bag" ${canExpand ? '' : 'disabled'}>Mở rộng</button></div>`;
+  const expandHtml = `<div class="dark-expand-card"><div class="dark-expand-icon">🎒</div><div class="dark-expand-body"><div class="dark-expand-title">Mở rộng ba lô <span class="dark-expand-badge">${totalSlots} ô</span></div><div class="dark-expand-sub">Bậc ${tier + 1}/${maxTier}: thêm 4 Ô (${totalSlots} → ${totalSlots + 4}). Nguyên liệu lấy trong túi đồ.</div><div class="dark-expand-cost"><span>⚡ ${costEnergy}</span><span>🪵 ${haveWood}/${costWood}</span><span>🌾 ${haveWheat}/${costWheat}</span><span style="${haveStar < costStar ? 'color:#f87171;' : ''}">⭐ ${haveStar}/${costStar}</span></div></div><button class="dark-expand-btn" data-action="expand-bag" ${canExpand ? '' : 'disabled'}>Mở rộng</button></div>`;
 
   const footerStatsHtml = `<div class="dark-stats-footer"><span>⚔️ Hạ gục <b>${state.counters?.kills || (state.progression as any)?.totals?.kill || 0}</b></span><span>🌾 Thu hoạch <b>${state.counters?.harvests || (state.progression as any)?.totals?.harvest || 0}</b></span><span>🐟 Câu được <b>${state.counters?.fish || (state.progression as any)?.totals?.fish || 0}</b></span></div>`;
 
@@ -656,7 +685,7 @@ function inventory() {
 
   const body = `<div class="dark-bag-theme"><div class="dark-equipment-row">${equipHtml}</div>${statStripHtml}${detailHtml}<div class="dark-inv-grid">${gridItemsHtml}${emptySlotsHtml}</div>${expandHtml}${footerStatsHtml}${planetBtnHtml}</div>`;
 
-  openDialog('bag', '🎒 Túi đồ & Trang bị', body, 'MAKE YOURSELF AT HOME');
+  openDialog('bag', 'Your explorer & backpack', body, 'CHARACTER');
 }
 // "36 energy · 6 XP · 15 stars" becomes three coloured chips.
 function rewardChips(label:string){return label.split(' · ').filter(Boolean).map(part=>{const kind=/energy|năng lượng/i.test(part)?'energy':/xp/i.test(part)?'xp':/star|sao/i.test(part)?'star':'';return `<span class="chip${kind?` chip-${kind}`:''}">${kind==='energy'?'ϟ ':kind==='xp'?'✨ ':kind==='star'?'⭐ ':''}${esc(kind?part.replace(/\s*(energy|stars?|năng lượng|sao)$/i,''):part)}</span>`;}).join('');}
