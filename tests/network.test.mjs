@@ -87,6 +87,33 @@ async function protocolRoom(t,{planet='home',configure=()=>{}}={}) {
   return {game,host,peer,explorer,barrier,store,action};
 }
 
+test('admin summons one public world boss, announcements reach other rooms and late arrivals receive its canonical state',async t=>{
+  const {game,host,peer,explorer,store}=await protocolRoom(t);
+  const call=async(client,method,data)=>{const response=await fetch(game.url+'/api/admin/world-boss',{method,headers:{Cookie:client.cookie,'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined});return {status:response.status,data:await response.json()};};
+  assert.equal((await call(peer,'POST',{type:'mushking'})).status,403);
+  const account=await store.get(host.id);await store.command({actorId:host.id,requestId:randomUUID(),hash:'b'.repeat(64),expectedRevision:account.profileRevision,actionType:'testAdmin',run:records=>{records.get(host.id).isAdmin=true;return true;}});
+  const spawned=await call(host,'POST',{type:'mushking'});assert.equal(spawned.status,200);
+  const event=await peer.next(m=>m.type==='worldEvent'&&m.phase==='spawn');assert.equal(event.boss.id,spawned.data.active.id);
+  const enemies=await host.next(enemiesWith(event.boss.id)),boss=enemies.enemies.find(e=>e.id===event.boss.id);assert.equal(boss.worldBoss,true);assert.ok(boss.hp>1000);
+  assert.equal((await call(host,'POST',{type:'dragon'})).status,409);
+  const late=await explorer('late_boss_player');assert.ok(late.joined.enemies.some(e=>e.id===boss.id&&e.hp===boss.hp));
+  late.send({type:'eventStatus'});assert.equal((await late.next(m=>m.type==='worldEventStatus')).active.id,boss.id);
+});
+
+test('two arena participants can fight through server basic attacks without losing adventure HP or items',async t=>{
+  const {game,host,peer,store}=await protocolRoom(t,{planet:'lava',configure:(profile,username)=>{if(username==='host_player')profile.level=1000;}});
+  const beforeA=(await store.get(host.id)).profile,beforeB=(await store.get(peer.id)).profile;
+  host.send({type:'arenaJoin'});peer.send({type:'arenaJoin'});
+  await host.next(m=>m.type==='arenaJoined');await peer.next(m=>m.type==='arenaJoined');
+  await new Promise(resolve=>setTimeout(resolve,3100));
+  host.send({type:'basic'});
+  await host.next(m=>m.type==='arenaResult'&&m.won);await peer.next(m=>m.type==='arenaResult'&&!m.won);
+  const winner=await store.get(host.id),loser=await store.get(peer.id);
+  assert.equal(winner.arenaStats.wins,1);assert.equal(loser.arenaStats.losses,1);
+  assert.equal(winner.profile.hp,beforeA.hp);assert.equal(loser.profile.hp,beforeB.hp);
+  assert.deepEqual(winner.profile.bag,beforeA.bag);assert.deepEqual(loser.profile.bag,beforeB.bag);assert.equal(loser.profile.dropped,beforeB.dropped);
+});
+
 test('visiting a garden from another planet preserves the saved destination and returns to its room',async t=>{
   const {game,host,peer,store}=await protocolRoom(t,{planet:'lava'});
   await store.friendAction(host.id,peer.id,'request');await store.friendAction(peer.id,host.id,'accept');
@@ -133,6 +160,7 @@ test('one server-simulated basic kill commits once and forged raw attacks cannot
   host.send({type:'enemies',enemies:[spawn]});await peer.next(enemiesWith(spawn.id));peer.send({type:'pose',x:-30,z:1});await host.next(m=>m.type==='pose'&&m.player.id===peer.id);
   const before=await (await fetch(game.url+'/api/auth/session',{headers:{Cookie:peer.cookie}})).json();
   peer.send({type:'basic',targetId:enemy.id});const death=await peer.next(m=>m.type==='defeat'&&m.id===enemy.id);assert.deepEqual(death.by,[peer.id]);
+  assert.equal(death.xpById[peer.id],enemy.xp);assert.ok(death.eventId);assert.equal(death.x,spawn.x);assert.equal(death.z,spawn.z);
   const saved=await (await fetch(game.url+'/api/auth/session',{headers:{Cookie:peer.cookie}})).json();assert.equal(saved.profile.counters.kills,before.profile.counters.kills+1);assert.equal(saved.profile.xp-before.profile.xp,enemy.xp);assert.ok(saved.revision>before.revision);
   peer.send({type:'basic',targetId:enemy.id});peer.send({type:'attack',id:enemy.id,damage:1e9});host.send({type:'defeat',id:enemy.id,xp:1e9});await barrier(host,peer);assert.deepEqual(peer.drain(m=>m.type==='defeat'&&m.id===enemy.id),[]);
   const final=await (await fetch(game.url+'/api/auth/session',{headers:{Cookie:peer.cookie}})).json();assert.equal(final.profile.counters.kills,1);assert.equal(final.profile.energy,saved.profile.energy);
@@ -274,7 +302,9 @@ test('chat rate rejection preserves request IDs while an accepted retry remains 
   assert.equal(peer.drain(m=>m.type==='chat').length,23);assert.equal(host.drain(m=>m.type==='chat').length,24);
 
   const rejected={type:'chat',requestId:randomUUID(),message:'This exceeds the limit'};host.send(rejected);
-  assert.deepEqual(await host.next(m=>m.type==='error'),{type:'error',requestId:rejected.requestId,message:'Please wait a moment before trying again.'});
+  const rateError=await host.next(m=>m.type==='error');
+  assert.ok(rateError.retryAfterMs>0&&rateError.retryAfterMs<=60000);
+  assert.deepEqual(rateError,{type:'error',requestId:rejected.requestId,status:429,retryAfterMs:rateError.retryAfterMs,message:'Please wait a moment before trying again.'});
   host.send(accepted[0]);assert.deepEqual(await host.next(m=>m.type==='chatAck'),{type:'chatAck',requestId:accepted[0].requestId});
   // The other account supplies the ordered barrier because this sender is rate-limited.
   await barrier(peer,peer);
