@@ -845,3 +845,91 @@ body.has-active-duel .hud-perf-badge {
   box-shadow: 0 4px 16px rgba(245, 158, 11, 0.4) !important;
 }
 
+/* Cloud Travel Transition */
+.cloud-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #c2e9fb 10%, #74b9ff 65%, #3a7bd5 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease-in-out;
+}
+.cloud-transition.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cloud-content {
+  text-align: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cloud-airship-bob {
+  font-size: 76px;
+  animation: airshipBob 1.6s ease-in-out infinite alternate;
+  filter: drop-shadow(0 14px 18px rgba(0, 0, 0, 0.25));
+}
+@keyframes airshipBob {
+  0% { transform: translateY(0px) rotate(-3deg); }
+  100% { transform: translateY(-16px) rotate(4deg); }
+}
+.cloud-drifting {
+  position: absolute;
+  font-size: 52px;
+  opacity: 0.88;
+  filter: drop-shadow(0 6px 12px rgba(255, 255, 255, 0.5));
+}
+.cloud-d1 {
+  top: -24px; left: -140px;
+  animation: cloudDrift1 2.2s linear infinite;
+}
+.cloud-d2 {
+  bottom: 10px; right: -150px;
+  animation: cloudDrift2 2.5s linear infinite;
+}
+.cloud-d3 {
+  top: 40px; left: 160px;
+  animation: cloudDrift3 2.8s linear infinite;
+}
+@keyframes cloudDrift1 {
+  0% { transform: translateX(0) scale(0.9); }
+  50% { transform: translateX(30px) scale(1.05); }
+  100% { transform: translateX(0) scale(0.9); }
+}
+@keyframes cloudDrift2 {
+  0% { transform: translateX(0) scale(1); }
+  50% { transform: translateX(-35px) scale(0.95); }
+  100% { transform: translateX(0) scale(1); }
+}
+@keyframes cloudDrift3 {
+  0% { transform: translateX(0) scale(0.85); }
+  50% { transform: translateX(25px) scale(1); }
+  100% { transform: translateX(0) scale(0.85); }
+}
+.cloud-msg {
+  margin-top: 24px;
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(8px);
+  padding: 8px 24px;
+  border-radius: 30px;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+}
+.leave-visit-chip {
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s;
+}
+.leave-visit-chip:hover {
+  transform: scale(1.05);
+  background: #ff6b81 !important;
+}
+
