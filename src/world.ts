@@ -34,6 +34,7 @@ import type { RoamArea } from './farm-roam.ts';
 import { STARTING_PLOTS, MAX_EXTRA_PLOTS } from './content.ts';
 import { approach, blocked, clearSegment, findRoute, nearbyObstacles, someObstacleNear, WORLD_BOUNDS, type Point, type NavigationOptions } from './navigation.ts';
 import { attackRange } from './combat.ts';
+import {ARENA} from './world-events.ts';
 import { type SaveState, type PlanetId, PLANETS, cropProgress, giftAvailable, maxHp } from './model.ts';
 import * as M from './model.ts';
 import {EnvironmentSimulation,createEnvironmentLayout,environmentWalkable,inWater,terrainHeight,zoneAt,type EnvironmentStatus,type EnvironmentEvent,type LightningState} from './environments.ts';
@@ -70,7 +71,7 @@ export interface AvatarVisual {size:number;stealth:boolean;shield:boolean;flight
 export interface Enemy {titanAttacks?:TitanAttack[];titanLift?:number}
 export interface RemotePose {/** The breed of the guard dog following this explorer (server-set; absent when it stays at its pen). */dog?:number|null;visual?:Partial<AvatarVisual>;id?:string;x:number;z:number;y?:number;facing?:number;color?:string;name?:string;planet?:PlanetId;space?:string;moving?:boolean;gear?:SaveState['gear'];look?:LookId;hp?:number;level?:number}
 export interface EnemyShotSnapshot {id:string;x:number;y:number;z:number;vx:number;vz:number;life:number;damage:number;targetEnemyId?:string}
-export interface EnemySnapshot {homeX?:number;homeZ?:number;titanAttacks?:TitanAttack[];titanLift?:number;chaseGrace?:number;id:string;type?:string;x:number;z:number;hp:number;maxHp:number;respawn:number;phase?:string;facing?:number;lift?:number;boss?:boolean;phaseTime?:number;stun?:number;statuses?:Record<string,number>;cooldown?:number;targetX?:number;targetZ?:number;bossStage?:number;skill?:BossSkill;attackCount?:number;skillCount?:number;telegraphs?:Enemy['telegraphs'];skillEffects?:Enemy['skillEffects'];spinTick?:number;damage?:number;shots?:EnemyShotSnapshot[]}
+export interface EnemySnapshot {visualScale?:number;radius?:number;worldBoss?:boolean;homeX?:number;homeZ?:number;titanAttacks?:TitanAttack[];titanLift?:number;chaseGrace?:number;id:string;type?:string;x:number;z:number;hp:number;maxHp:number;respawn:number;phase?:string;facing?:number;lift?:number;boss?:boolean;phaseTime?:number;stun?:number;statuses?:Record<string,number>;cooldown?:number;targetX?:number;targetZ?:number;bossStage?:number;skill?:BossSkill;attackCount?:number;skillCount?:number;telegraphs?:Enemy['telegraphs'];skillEffects?:Enemy['skillEffects'];spinTick?:number;damage?:number;shots?:EnemyShotSnapshot[]}
 export interface EnvironmentSnapshot {time:number;lamps:Array<[number,number]>;eclipseUntil?:number;weather?:LavaWeatherSnapshot;nestLevel?:number;fireRain?:EnvironmentSimulation['fireRain'];lightning?:LightningState}
 export interface EnvironmentAction {kind:'light-pillar'|'collect-ore';id:string;index?:number}
 export interface EnvironmentReward {id:string;count:number}
@@ -151,6 +152,7 @@ export class World {
   authoritativeAction?:(intent:{type:string;payload?:Record<string,unknown>})=>Promise<unknown>;
   private progressPending=new Set<string>();private titanView?:TitanAttackView;
   environment!:EnvironmentSimulation;environmentView!:EnvironmentView;movementLocked=false;/** In the village or the cottage and hurt: home-care.ts heals 4x, the HUD shows a chip. */ homeRecovering=false;playerFlying=false;playerStealth=false;
+  arenaActive=false;arenaStunUntil=0;arenaTargets:{id:string;x:number;z:number;hp:number;maxHp:number;radius:number}[]=[];
   networkRole:'host'|'peer'|null=null;remotePlayers=new Map<string,{mesh:T.Group;pose:RemotePose}>();remoteRoot=new T.Group();
   onRemoteDamage:(id:string,amount:number,source?:'melee'|'shot'|'hazard',enemyId?:string)=>void=()=>{};
   onEnvironmentEvent:(event:EnvironmentEvent)=>void=()=>{};
@@ -509,6 +511,7 @@ export class World {
     this.syncCrops();this.syncBeds();
   }
   build(planet: PlanetId) {
+    this.arenaActive=false;this.arenaStunUntil=0;this.arenaTargets=[];
     // A rebuild (travel, visiting, reset) always lands outdoors.
     if(this.interior){const inside=this.interior;this.interior=null;inside.drop();}
     this.farmView?.dispose();this.farmView=undefined;this.titanView?.clear();this.joystickInput=null;
@@ -554,6 +557,16 @@ export class World {
         const bush=this.kit(i%5===2?'mushroom':'bush');if(bush){bush.position.set(x,0,z);bush.rotation.y=a;bush.scale.setScalar(i%5===2?1.3:.85+(i%3)*.12);this.root.add(bush);}}
       for(const [x,z,r] of [[10,52,9],[40,105,11],[-70,35,8],[-105,-30,7]])this.makePond(x,z,r);
       this.position.set(0,0,-4.8);
+    }else if(planet==='arena'){
+      this.position.set(0,0,20);
+      this.facing=Math.PI;
+      this.addEntity('travel','Starship station','🚀',this.rocket(),0,24,2);this.obstacle(0,24,1.5);
+      const fameStatue=group(cyl('#d4af37',1.2,1.4,.6,0,.3),box('#f6d365',.8,1.6,.8,0,1.4),box('#ffd700',1.4,.3,.4,0,2.3),cyl('#ffe066',.6,.4,.8,0,2.3));
+      this.addEntity('halloffame','Bảng Vàng Đấu Trường','🏆',fameStatue,-10,18,2);this.obstacle(-10,18,1.4);
+      const pvpShop=this.stall('#7b2cbf','shop');pvpShop.rotation.y=-Math.PI/4;
+      this.addEntity('shop','Tiệm Đấu Sĩ PvP','⚔️',pvpShop,10,18,2);this.obstacle(10,18,1.4);
+      const brazier=(x:number,z:number)=>{const b=group(cyl('#4a3b32',.4,.5,1.2,0,.6),cyl('#ff7b00',.5,.3,.3,0,1.3),box('#ffea00',.2,.4,.2,0,1.5));b.position.set(x,0,z);this.root.add(b);this.obstacle(x,z,.6);};
+      brazier(-4,18);brazier(4,18);brazier(-6,12);brazier(6,12);
     }else{
       this.position.set(0,0,3.6);this.addEntity('travel','Starship','🚀',this.rocket(),0,0,2);this.obstacle(0,0,1.4);
       this.addEntity('mine',planet==='lava'?'Magma crystal vein':'Planetary crystal vein','⛏️',this.crystal(planet==='lava'?'#ffaf62':'#a9cadc'),-6,3,1.4,0);
@@ -590,6 +603,8 @@ export class World {
     if(planet==='home'){
       for(const [zone,spawns] of Object.entries(HOME_SPAWNS))for(const [type,count] of spawns)for(let i=0;i<count;i++)placeEnemy(type,zone);
       for(const [type,zone] of [['bear','canyon'],['treant','forest'],['croc','swamp'],['mushking','meadow']])placeEnemy(type,zone,true);
+    }else if(planet==='arena'){
+      // No monster spawns in the gladiatorial colosseum realm
     }else{for(const [type,count] of PLANET_SPAWNS[planet]??[])for(let i=0;i<count;i++)placeEnemy(type);for(const type of PLANET_BOSSES[planet]??[])placeEnemy(type,undefined,true);}
     const titan=TITAN_BY_PLANET[planet];if(titan)placeEnemy(titan,planet==='home'?'canyon':undefined,true);
     if(planet==='lava'){
@@ -598,7 +613,7 @@ export class World {
     }
     if(planet==='home')for(let i=0;i<FOREST_RAPTOR_COUNT;i++)placeEnemy('forest_raptor','forest');
     const free=(x:number,z:number,r:number)=>!someObstacleNear(this.obstacles,x,z,x,z,r,o=>Math.hypot(x-o.x,z-o.z)<o.r+r)&&!this.entities.some(e=>Math.hypot(x-e.x,z-e.z)<e.radius+r);
-    this.decor=planDecor({planet,layout,random:rng,free,ponds,clearings:this.enemies.filter(e=>e.respawn<999999).map(e=>({x:e.homeX,z:e.homeZ,type:e.type}))});
+    this.decor=planet==='arena'?[]:planDecor({planet,layout,random:rng,free,ponds,clearings:this.enemies.filter(e=>e.respawn<999999).map(e=>({x:e.homeX,z:e.homeZ,type:e.type}))});
     for(const piece of this.decor)if(piece.radius>0)this.obstacle(piece.x,piece.z,piece.radius);
     for(const name of kitsFor(planet)){const kit=SCENERY_KITS[name];if(!kit.ready)void kit.load().then(()=>{if(kit.ready&&this.planet===planet)this.refreshScenery();});}
     this.batchScenery();this.refreshScenery();this.root.add(this.player,this.companion);this.cameraTarget.copy(this.position);this.cropCards?.reset();this.syncCrops();this.syncDropped();this.applyRefinedAssets();this.syncDecorations();this.refreshEnvironmentNodes();
@@ -944,8 +959,9 @@ export class World {
     if(impact.lift)this.knockUpEnemy(e,impact.lift,.8);
   }
   applyEnemySnapshots(snapshots:EnemySnapshot[]){const own=`${this.planet}:`;for(const snapshot of snapshots){if(typeof snapshot.id!=='string'||!snapshot.id.startsWith(own)||!Number.isFinite(snapshot.x)||!Number.isFinite(snapshot.z)||!Number.isFinite(snapshot.hp))continue;let e=this.enemies.find(e=>e.id===snapshot.id);if(!e&&snapshot.type&&ENEMY_TYPES[snapshot.type]){e=this.spawnSpecies(snapshot.type,snapshot.x,snapshot.z,this.enemies.length)??undefined;if(e)e.id=snapshot.id;}if(!e)continue;
+        if(snapshot.worldBoss){e.mesh.userData.worldBossScale=Math.max(1,Math.min(3,snapshot.visualScale??1.8));if(Number.isFinite(snapshot.radius))e.radius=snapshot.radius!;}
         if(this.networkRole!=='host'){e.x=snapshot.x;e.z=snapshot.z;e.phase=snapshot.phase;e.phaseTime=snapshot.phaseTime??0;e.targetX=snapshot.targetX;e.targetZ=snapshot.targetZ;e.mesh.rotation.y=snapshot.facing??0;e.mesh.position.set(e.x,terrainHeight(this.environment.layout,e)+(e.lift??0),e.z);}
-        e.hp=Math.max(0,snapshot.hp);e.maxHp=snapshot.maxHp;e.respawn=snapshot.respawn;e.lift=snapshot.lift??0;e.stun=snapshot.stun??0;if(Number.isFinite(snapshot.chaseGrace))e.lastHitAt=this.time-4+Math.max(0,Math.min(4,snapshot.chaseGrace!));e.cooldown=snapshot.cooldown??0;e.statuses={...snapshot.statuses};e.bossStage=snapshot.bossStage;e.skill=snapshot.skill;e.attackCount=snapshot.attackCount;e.skillCount=snapshot.skillCount;e.telegraphs=snapshot.telegraphs?.map(p=>({...p}));e.skillEffects=snapshot.skillEffects?.map(p=>({...p}));e.spinTick=snapshot.spinTick;e.damage=snapshot.damage??e.damage;e.titanAttacks=sanitizeTitanAttacks(snapshot.titanAttacks);e.titanLift=snapshot.titanLift??0;e.scaled=true;if(this.networkRole==='host')e.mesh.position.y=terrainHeight(this.environment.layout,e)+(e.lift??0);e.mesh.visible=e.hp>0;
+        const wasAlive=e.hp>0;e.hp=Math.max(0,snapshot.hp);e.maxHp=snapshot.maxHp;e.respawn=snapshot.respawn;e.lift=snapshot.lift??0;e.stun=snapshot.stun??0;if(Number.isFinite(snapshot.chaseGrace))e.lastHitAt=this.time-4+Math.max(0,Math.min(4,snapshot.chaseGrace!));e.cooldown=snapshot.cooldown??0;e.statuses={...snapshot.statuses};e.bossStage=snapshot.bossStage;e.skill=snapshot.skill;e.attackCount=snapshot.attackCount;e.skillCount=snapshot.skillCount;e.telegraphs=snapshot.telegraphs?.map(p=>({...p}));e.skillEffects=snapshot.skillEffects?.map(p=>({...p}));e.spinTick=snapshot.spinTick;e.damage=snapshot.damage??e.damage;e.titanAttacks=sanitizeTitanAttacks(snapshot.titanAttacks);e.titanLift=snapshot.titanLift??0;e.scaled=true;if(this.networkRole==='host')e.mesh.position.y=terrainHeight(this.environment.layout,e)+(e.lift??0);if(wasAlive&&e.hp<=0){e.dying=.3;this.defeatFeedback(e);}e.mesh.visible=e.hp>0||(e.dying??0)>0;
       if(snapshot.shots){this.enemyShots??=[];const ids=new Set(snapshot.shots.map(s=>s.id));for(let i=this.enemyShots.length-1;i>=0;i--)if(this.enemyShots[i].ownerId===e.id&&!ids.has(this.enemyShots[i].id)){const old=this.enemyShots[i];this.scene.remove(old.mesh);old.mesh.geometry.dispose();this.enemyShots.splice(i,1);}for(const source of snapshot.shots){if(![source.x,source.y,source.z,source.vx,source.vz,source.life,source.damage].every(Number.isFinite)||source.life<=0)continue;let shot=this.enemyShots.find(s=>s.id===source.id);if(!shot){const electric=e.type==='robot',model=ball(electric?'#e8fbff':e.definition?.accent??'#ffbb72',.17);this.scene.add(model);shot={...source,ownerId:e.id,mesh:model,...(electric?{electric}:{})};this.enemyShots.push(shot);}Object.assign(shot,{vx:source.vx,vz:source.vz,life:source.life,damage:source.damage,targetEnemyId:source.targetEnemyId});shot.mesh.position.set(source.x,source.y,source.z);}}
     }}
   /**
@@ -992,9 +1008,9 @@ export class World {
         else if(u.actionPose==='bless'){l.armL?.rotation.set(-1.5,0,-.8);l.armR?.rotation.set(-1.5,0,.8);}
       }
       // The transmitted pose.y includes flight height; only add a small visual hover.
-      if(flying){l.legL?.rotation.set(.18,0,-.12);l.legR?.rotation.set(-.12,0,.12);u.actionLift+=Math.sin(this.time*4)*.07;
-        if((u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0){l.armL?.rotation.set(-1.35,0,-.28);l.armR?.rotation.set(-1.35,0,.28);}}
-      m.rotation.x=flying?.35:0;
+      if(flying){l.legL?.rotation.set(moving?.18:.12,0,-.12);l.legR?.rotation.set(moving?-.12:.12,0,.12);u.actionLift+=Math.sin(this.time*4)*.07;
+        if((u.actionT??0)<=0&&(u.attackT??0)<=0&&(u.spinT??0)<=0){l.armL?.rotation.set(moving?-1.35:-.25,0,-.28);l.armR?.rotation.set(moving?-1.35:-.25,0,.28);}}
+      m.rotation.x=flying&&moving?Math.PI/6:0;
       m.position.y+=(u.actionLift??0);
       // Their pet waits at their own pen while they are in the safe village (pet-pen.ts): it is drawn beside them only away from it.
       const pet=(u.pet===undefined?u.pet=m.getObjectByName('remote-pet')??null:u.pet) as T.Object3D|null;if(pet)pet.visible=petFollows(remote.pose.planet??this.planet,remote.pose);
@@ -1231,9 +1247,10 @@ export class World {
   /** A defeated creature bursts into a puff: a 2.5 m ring, about 25 particles in its colours and a short freeze. */
   defeatFeedback(e:Enemy){
     const fx=this.fx;if(!fx)return;const at={x:e.x,y:e.mesh.position.y,z:e.z},color=e.definition?.color??'#ffffff';
-    fx.burst(at,{n:e.boss?40:16,color:[color,'#ffffff',e.definition?.accent??color],size:.16,speed:6,up:6,y:.6});
-    fx.burst(at,{n:e.boss?30:9,color:['#ffffff','#fff7a8'],glow:true,size:.18,speed:4,up:5,life:.7});
-    fx.ring({x:e.x,z:e.z},{color:'#ffffff',from:.3,to:e.boss?4:2.5,life:.45,y:.1});fx.spark({x:e.x,y:at.y+.8,z:e.z},e.boss?2.4:1.6,.14);
+    fx.burst(at,{n:e.boss?52:34,color:[color,e.definition?.accent??color,'#ffffff','#ffe5a8','#a8e6ff'],size:.18,speed:8,up:7,y:.7,life:1});
+    fx.burst(at,{n:e.boss?28:16,color:['#ffffff','#fff7a8','#c9b6ff'],glow:true,size:.17,speed:6,up:6,life:.85});
+    fx.ring({x:e.x,z:e.z},{color:'#ffffff',from:.3,to:e.boss?4:3,life:.55,y:.1});fx.spark({x:e.x,y:at.y+.8,z:e.z},e.boss?2.8:2,.2);
+    fx.flash({x:e.x,y:at.y+1,z:e.z},color,e.boss?3:2,.2);
     fx.freeze(.05);if(e.boss)fx.shake(.45);
   }
   /** The player flinches and briefly glows red. */
@@ -1614,7 +1631,7 @@ export class World {
     // A wanderer that thinks on every 4th step glides between its last two positions instead of hopping (teleports snap).
     const lod=this.networkRole!=='peer'?e.lod:undefined,glide=lod&&Math.abs(e.x-lod.x)+Math.abs(e.z-lod.z)<.5?Math.min(1,(lod.age+1)/4):1,drawX=lod?lod.x+(e.x-lod.x)*glide:e.x,drawZ=lod?lod.z+(e.z-lod.z)*glide:e.z;
     e.mesh.position.set(drawX,ground+(e.lift??0)+(e.titanLift??0)+(e.definition?.flying?1+Math.sin(this.time*4+e.homeX)*.15:Math.sin(this.time*3+e.homeX)*.06),drawZ);
-    const scale=enemyScale(e.type,e.boss)*((e.statuses?.sheep??0)>0?.45:1);e.mesh.scale.setScalar(scale);
+    const scale=enemyScale(e.type,e.boss)*(e.mesh.userData.worldBossScale??1)*((e.statuses?.sheep??0)>0?.45:1);e.mesh.scale.setScalar(scale);
     // Hit reaction: a pop in the creature's own colour (emissive 0.35) and a ×1.15 squash, so the silhouette survives the hit.
     if((e.flash??0)>0){e.flash=Math.max(0,e.flash!-dt);const k=e.flash!/.14;e.mesh.scale.x*=1+k*.15;e.mesh.scale.z*=1+k*.15;e.mesh.scale.y*=1+k*.06;}
     const lit=(e.flash??0)>0;if(lit!==!!e.flashLit){e.flashLit=lit;for(const m of (e.mesh.userData.flashMaterials??[]) as LitMaterial[]){if(lit){m.userData.baseEmissive??=m.emissive.getHex();m.userData.baseGlow??=m.emissiveIntensity;m.emissive.set(e.definition?.color??'#ffffff');m.emissiveIntensity=.35;}else{m.emissive.setHex(m.userData.baseEmissive??0);m.emissiveIntensity=m.userData.baseGlow??1;}}}
@@ -1626,7 +1643,7 @@ export class World {
     const environmentForFrame=this.environment;
     if(active||simulateWorld)this.time+=dt;
     let dx=0,dz=0,routeTarget:T.Vector3|undefined;
-    if(active&&!this.movementLocked&&!this.environment.airborne){
+    if(active&&!this.movementLocked&&Date.now()>=(this.arenaStunUntil||0)&&!this.environment.airborne){
       dx=Number(this.keys.has('ArrowRight'))-Number(this.keys.has('ArrowLeft'));dz=Number(this.keys.has('ArrowDown'))-Number(this.keys.has('ArrowUp'));if(!dx&&!dz&&this.joystickInput){dx=this.joystickInput.x;dz=this.joystickInput.z;}
       if(dx||dz){this.destination=null;this.route=[];this.selected=null;this.marker.visible=false;this.ring.visible=false;}
       else if(this.route.length){routeTarget=this.route[0];dx=routeTarget.x-this.position.x;dz=routeTarget.z-this.position.z;if(Math.hypot(dx,dz)<.001){this.route.shift();dx=dz=0;}}
@@ -1643,7 +1660,7 @@ export class World {
       else{
         let mx=step.motion.x,mz=step.motion.z;
         if(routeTarget&&Math.hypot(mx,mz)>inputLength){mx=dx;mz=dz;this.environment.velocity={x:0,z:0};}
-        if(active&&!this.movementLocked)this.move(mx,mz);
+        if(active&&!this.movementLocked&&Date.now()>=(this.arenaStunUntil||0))this.move(mx,mz);
         if(step.push.x||step.push.z)this.move(step.push.x,step.push.z,true);
         this.position.y=step.y+(this.playerFlying?1.7:0);
       }
@@ -1661,7 +1678,7 @@ export class World {
       this.environmentView?.update(this.environment);this.refreshEnvironmentNodes();this.syncWeatherNodes();
       for(const e of this.entities)if(e.kind==='turtle'){e.x=e.mesh.position.x;e.z=e.mesh.position.z;}
     }
-    if(active&&!this.movementLocked&&!this.environment.airborne){
+    if(active&&!this.movementLocked&&Date.now()>=(this.arenaStunUntil||0)&&!this.environment.airborne){
       if(this.selected&&!this.validTarget(this.selected)){this.selected=null;this.destination=null;this.route=[];this.ring.visible=false;this.marker.visible=false;}
       if(this.selected){const e=this.selected;this.ring.position.set(e.x,.1,e.z);if(Math.hypot(e.x-this.position.x,e.z-this.position.z)<=this.interactionRange(e)){this.destination=null;this.route=[];this.marker.visible=false;if(e.kind==='enemy')this.onAttackEnemy(e as Enemy);else{this.selected=null;this.ring.visible=false;this.onInteract(e);}}else if((e.kind==='enemy'||e.kind==='turtle'||e.kind==='animal')&&(!this.destination||Math.hypot(this.destination.x-e.x,this.destination.z-e.z)>4))this.select(e);}
     }
@@ -1796,8 +1813,8 @@ export class World {
       else if(motion==='throw'){const raised=this.disguiseT>.4;armL?.rotation.set(raised?-2.4:-.5,0,-.25);armR?.rotation.set(raised?-2.4:-1.3,0,.25);lean=raised?-.2:.25;}
       else if(motion==='bless'){armL?.rotation.set(-1.5,0,-.8);armR?.rotation.set(-1.5,0,.8);lift+=.08;}
     }
-    if(this.playerFlying){legL?.rotation.set(.18,0,-.12);legR?.rotation.set(-.12,0,.12);lift+=Math.sin(this.time*4)*.07;
-      if(this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose){armL?.rotation.set(-1.35,0,-.28);armR?.rotation.set(-1.35,0,.28);lean=.35;}}
+    if(this.playerFlying){legL?.rotation.set(this.moving?.18:.12,0,-.12);legR?.rotation.set(this.moving?-.12:.12,0,.12);lift+=Math.sin(this.time*4)*.07;
+      if(this.disguiseT<=0&&this.punchT<=0&&this.spinT<=0&&!pose){armL?.rotation.set(this.moving?-1.35:-.25,0,-.28);armR?.rotation.set(this.moving?-1.35:-.25,0,.28);lean=this.moving?Math.PI/6:0;}}
     // Laser gaze (skill-fx.ts): the head turns with the sweep, so the beams leave the eyes along the line they hit.
     const gaze=this.gazeAngle;if(head&&gaze!=null){const turn=Math.atan2(Math.sin(gaze-this.facing),Math.cos(gaze-this.facing));head.rotation.set(-.06,Math.max(-1.2,Math.min(1.2,turn)),0);}
     // Fishing: the cast swings the rod overhead and forward; reeling leans back against the line.

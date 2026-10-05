@@ -602,7 +602,7 @@ export function removeDecoration(s: SaveState, uid: string) { const index = s.de
 export const MINE_REGROW_MS = 20000;
 export function mineAvailable(s: SaveState, planet: PlanetId, index: number, now = Date.now()) { return Object.hasOwn(PLANETS, planet) && planet !== 'home' && Number.isInteger(index) && index >= 0 && index < 2 && Number.isFinite(now) && now >= 0 && now <= Number.MAX_SAFE_INTEGER - MINE_REGROW_MS && now >= (s.worldRewards.mineReadyAt[planet]?.[index] || 0); }
 export function claimMine(s: SaveState, index: number, now = Date.now()) { if (!mineAvailable(s, s.planet, index, now))
-    return false; const material: Record<PlanetId, string> = { home: 'stone', candy: 'sugar', ice: 'icecrystal', lava: 'mcrystal', toy: 'gear', jungle: 'vine', ocean: 'coral', cloud: 'feather', shadow: 'shadow' }; if (!addItem(s, material[s.planet])) return false; (s.worldRewards.mineReadyAt[s.planet] ??= [0, 0])[index] = now + MINE_REGROW_MS; recordEvent(s, 'mine', 1, undefined, now); return true; }
+    return false; const material: Record<PlanetId, string> = { home: 'stone', candy: 'sugar', ice: 'icecrystal', lava: 'mcrystal', toy: 'gear', jungle: 'vine', ocean: 'coral', cloud: 'feather', shadow: 'shadow', arena: 'stone' }; if (!addItem(s, material[s.planet])) return false; (s.worldRewards.mineReadyAt[s.planet] ??= [0, 0])[index] = now + MINE_REGROW_MS; recordEvent(s, 'mine', 1, undefined, now); return true; }
 export const GIFT_REGROW_MS = 45000, GIFT_COUNT = 26;
 export interface GiftOutcome {
     kind: 'giant' | 'tiny' | 'coins' | 'heal' | 'bomb' | 'toys' | 'curse';

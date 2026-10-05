@@ -2,7 +2,7 @@ import { TITAN_ITEMS, TITAN_LOOT } from './titan-content.ts';
 // Gameplay facts measured from the public reference client, 2026-09-30.
 // Rendering assets, descriptions and implementation code are independently authored.
 export type GearSlot = 'weapon' | 'hat' | 'outfit' | 'boots' | 'pet' | 'disguise';
-export type PlanetId = 'home' | 'candy' | 'ice' | 'lava' | 'toy' | 'jungle' | 'ocean' | 'cloud' | 'shadow';
+export type PlanetId = 'home' | 'candy' | 'ice' | 'lava' | 'toy' | 'jungle' | 'ocean' | 'cloud' | 'shadow' | 'arena';
 export type ItemId = string;
 export type CropId = string;
 export type Inventory = Partial<Record<ItemId, number>>;
@@ -3732,6 +3732,7 @@ for (const [raw, fact] of Object.entries(PLANET_FACTS)) {
     const id = sourcePlanet(raw) as PlanetId, [enemy, health, attack, xp] = basicEnemy[id];
     PLANETS[id] = { name: fact.name, icon: fact.emoji, level: fact.lvl, color: fact.ground?.[0] || fact.grad[0], sky: fact.sky, grad: fact.grad, ground: fact.ground || ['#86d25a', '#9be36f', '#e8cf92'], description: `${fact.name} · Landing from level ${fact.lvl}.`, enemy, health, attack, xp, bosses: fact.bosses || ['bear', 'treant', 'croc', 'mushking'], spawns: fact.spawns || [['mushroom', 20], ['boar', 12], ['bee', 6], ['wolf', 10], ['chomper', 14], ['cactus', 14]] };
 }
+PLANETS.arena = { name: 'Đấu Trường La Mã', icon: '⚔️', level: 1, color: '#2b2137', sky: '#2b1b3d', grad: ['#4b2d68', '#2b1b3d', '#1a1226'], ground: ['#282033', '#392c47', '#ffd700'], description: 'Thánh địa giác đấu cổ đại. Nơi hội tụ các anh hùng so tài chiêu thức đỉnh cao.', enemy: 'golem', health: 1000, attack: 10, xp: 100, bosses: [], spawns: [] };
 export const FISH_WEIGHTS: Record<string, [
     string,
     number
@@ -3836,9 +3837,9 @@ ITEMS.plot_kit.desc = 'One more garden bed for home. Place it from your backpack
 // Both fertilizers advance half the original timer, as requested for the updated game.
 ITEMS.manure.desc = "Removes half of the crop's original growing time. Two uses ripen a newly planted crop.";
 ITEMS.spore.desc = ITEMS.manure.desc;
-const planetLabels: Record<PlanetId, string> = { home: 'Clover Village', candy: 'Candy Planet', ice: 'Frost Planet', lava: 'Volcano Planet', toy: 'Toybox Planet', jungle: 'Wild Jungle', ocean: 'Ocean Planet', cloud: 'Cloud Islands', shadow: 'Night Planet' };
+const planetLabels: Record<PlanetId, string> = { home: 'Clover Village', candy: 'Candy Planet', ice: 'Frost Planet', lava: 'Volcano Planet', toy: 'Toybox Planet', jungle: 'Wild Jungle', ocean: 'Ocean Planet', cloud: 'Cloud Islands', shadow: 'Night Planet', arena: 'Arena Colosseum' };
 for (const [id, planet] of Object.entries(PLANETS)) {
-    planet.name = planetLabels[id as PlanetId];
+    planet.name = planetLabels[id as PlanetId] || 'Arena Colosseum';
     planet.description = `${planet.name} · Landing from level ${planet.level}.`;
 }
 const skillLabels: Record<string, string[]> = { dz_ninja: ['Shadow clones', 'Vanish', 'Shadow strike', 'Smoke bomb'], dz_mage: ['Great fireball', 'Blink', 'Sheep spell', 'Black hole'], dz_knight: ['Raise shield', 'Charge', 'Challenge', 'Holy blade'], dz_mecha: ['Tank mode', 'Turret', 'Homing missiles', 'Energy shield'], dz_dino: ['Devour', 'Tail sweep', 'Terrifying roar', 'Giant form'], dz_fairy: ['Healing flowers', 'Float', 'Charm', 'Binding tree'], dz_pirate: ['Cannon', 'Hook', 'Scout parrot', 'Broadside'], dz_superhero: ['Take flight', 'Meteor dive', 'Laser gaze', 'Boulder throw'], dz_vampire: ['Life drain', 'Bat form', 'Bat swarm', 'Blood moon'], dz_snowman: ['Rolling snowball', 'Snow decoy', 'Ice rink', 'Ice age'] };
@@ -3860,7 +3861,7 @@ for (const recipe of RECIPES)
 ITEMS.rod.desc='Keep this rod in your backpack. It is held automatically near a pond; your combat weapon returns away from water. Hook at the bite, then balance reeling with line tension. Its bamboo line snaps 60% of the time when it strains (the tension bar fills).';
 ITEMS.rod_gold.desc='A stronger rod that makes difficult fish easier to land and improves rare catches. A strained line snaps only 30% of the time.';
 ITEMS.rod_steady.desc='A sturdy rod with a forgiving line: tension builds slowly and heavy fish feel lighter. A strained line snaps only 10% of the time, so let go of Reel when the fish surges.';
-const worldDescriptions:Record<PlanetId,string>={home:'Your garden and four trails: forest, meadow, swamp and canyon.',candy:'Sweet forests, springy surprises and powerful candy creatures.',ice:'Slippery ice, frozen ponds and snowbound bosses. Plan your stopping distance.',lava:'Eruptions, rising lava, meteors and a hidden cave furnace. Watch the warning circles.',toy:'Ride the moving trains and open surprise gifts among giant toys.',jungle:'Changing thorn walls, poisonous plants and restorative fruit.',ocean:'Swim between islands. Refill your air at bubbles or ride a sea turtle.',cloud:'Bounce between floating islands and watch the wind near their edges.',shadow:'Explore the darkness, light ancient pillars and face the Night Lord.'};
+const worldDescriptions:Record<PlanetId,string>={home:'Your garden and four trails: forest, meadow, swamp and canyon.',candy:'Sweet forests, springy surprises and powerful candy creatures.',ice:'Slippery ice, frozen ponds and snowbound bosses. Plan your stopping distance.',lava:'Eruptions, rising lava, meteors and a hidden cave furnace. Watch the warning circles.',toy:'Ride the moving trains and open surprise gifts among giant toys.',jungle:'Changing thorn walls, poisonous plants and restorative fruit.',ocean:'Swim between islands. Refill your air at bubbles or ride a sea turtle.',cloud:'Bounce between floating islands and watch the wind near their edges.',shadow:'Explore the darkness, light ancient pillars and face the Night Lord.',arena:'Grand gladiatorial colosseum realm. Challenge other players in honorable combat.'};
 for(const id of Object.keys(PLANETS)as PlanetId[])PLANETS[id].description=worldDescriptions[id];
 
 Object.assign(ITEMS, TITAN_ITEMS);

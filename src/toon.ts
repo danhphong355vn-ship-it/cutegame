@@ -31,6 +31,7 @@ export const PLANET_LIGHT: Record<PlanetId, { hemi: [string, string]; sun: strin
   ocean: { hemi: ['#e8fbff', '#6fb0d8'], sun: '#fffbe8' },
   cloud: { hemi: ['#ffffff', '#8fb8e8'], sun: '#ffffff' },
   shadow: { hemi: ['#6a6aa8', '#1a1430'], sun: '#8a8ad8' },
+  arena: { hemi: ['#d5b8ff', '#2d2238'], sun: '#ffe082' },
 };
 export const LIGHT = { hemi: 1.5, sun: 2.4, lavaSun: 2 } as const;
 /** Where the sun sits relative to the camera target: the reference's direction (14,30,10) (bundle @1042395), kept at the

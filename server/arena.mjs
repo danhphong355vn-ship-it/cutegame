@@ -9,12 +9,14 @@ export function createArena({peers,send,broadcast,rooms,commit,onLeave=()=>{},im
   function leave(peer){if(members.delete(peer.account.id)){onLeave(peer);send(peer.socket,{type:'arenaLeft'});publish(rooms.get(peer.room));}}
   function join(peer){
     if(!enabled)throw Object.assign(new Error('Đấu trường PvP hiện đang tạm đóng cửa bởi Quản trị viên.'),{status:400});
-    if(peer.planet!==ARENA.planet||peer.visit||peer.party||!peer.active||peer.account.profile.hp<=0)throw Object.assign(new Error('Hãy đến Đảo Núi Lửa ở thế giới công cộng để tham gia võ đài.'),{status:400});
+    if((peer.planet!==ARENA.planet&&peer.planet!=='lava')||peer.visit||peer.party||!peer.active||peer.account.profile.hp<=0)throw Object.assign(new Error('Hãy đến Đấu Trường ở thế giới công cộng để tham gia võ đài.'),{status:400});
     if(members.has(peer.account.id))return;
     const maxHp=Game.maxHp(peer.account.profile);
-    peer.pose={...peer.pose,x:ARENA.spawnX,z:ARENA.spawnZ};
+    const spawnX = peer.planet === 'lava' ? 0 : ARENA.spawnX;
+    const spawnZ = peer.planet === 'lava' ? -48 : ARENA.spawnZ;
+    peer.pose={...peer.pose,x:spawnX,z:spawnZ};
     members.set(peer.account.id,{peer,hp:maxHp,maxHp,protectedUntil:now()+3000,stunUntil:0,pending:false});
-    send(peer.socket,{type:'arenaJoined',...ARENA,hp:maxHp,maxHp});publish(rooms.get(peer.room));
+    send(peer.socket,{type:'arenaJoined',planet:peer.planet,x:spawnX,z:spawnZ,radius:ARENA.radius,spawnX,spawnZ,hp:maxHp,maxHp});publish(rooms.get(peer.room));
   }
   function targets(peer){const member=members.get(peer.account.id);if(!member||member.pending||member.protectedUntil>now()||!eligible(peer))return [];
     return [...members.values()].filter(m=>m.peer!==peer&&!m.pending&&m.protectedUntil<=now()&&eligible(m.peer)&&m.peer.room===peer.room).map(m=>({id:`arena:${m.peer.account.id}`,x:m.peer.pose.x,z:m.peer.pose.z,hp:m.hp,maxHp:m.maxHp,radius:.65,boss:false}));

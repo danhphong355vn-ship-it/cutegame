@@ -102,7 +102,7 @@ test('star-map routes list every planet easiest first, then nearest', () => {
   const routes = planRoutes({ from: 'home', level: 30, discovered: allIds, levels });
   assert.equal(routes.length, allIds.length);
   for (let i = 1; i < routes.length; i++) assert.ok(routes[i - 1].level < routes[i].level || routes[i - 1].level === routes[i].level && routes[i - 1].distance <= routes[i].distance);
-  assert.deepEqual(routes.map(r => r.id), ['home', 'toy', 'candy', 'jungle', 'ice', 'ocean', 'lava', 'cloud', 'shadow']);
+  assert.deepEqual(routes.map(r => r.id), ['home', 'arena', 'toy', 'candy', 'jungle', 'ice', 'ocean', 'lava', 'cloud', 'shadow']);
 });
 
 test('routes lock the current planet, undiscovered planets and too-high levels', () => {

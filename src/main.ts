@@ -8,6 +8,8 @@ import './style.css';
 import './skills.css';
 import { t, localizeHtml, getLanguage, setLanguage, onLanguageChange, bindLanguage } from './i18n.ts';
 import './menus.css';
+import './title-screen.css';
+import { renderTitleScreen, playStartChime, getActiveMode, setActiveMode } from './title-screen.ts';
 import { Box3, Vector3 } from 'three';
 import { World, type Entity, type Enemy } from './world.ts';
 import { dogCoatOf } from './dog-world.ts';
@@ -186,7 +188,17 @@ app.innerHTML = `
     <div class="space-help">Hold to steer <i>•</i> <kbd>W</kbd> <kbd>A</kbd> <kbd>D</kbd> fly <i>•</i> <kbd>Shift</kbd> boost <i>•</i> <kbd>S</kbd> brake <i>•</i> <kbd>L</kbd> land</div>
   </div>
   <div id="warp-flash"></div>
-  <div id="title-screen"><div class="title-shade"></div><div class="welcome-card">${languageSelector('welcome')}<div class="welcome-eyebrow"><span></span> YOUR NEXT LITTLE ADVENTURE</div><div class="brand-sprout">🌱</div><h1>Zoo <em data-i18n-skip>Garden</em><span>grow a little. wander a lot.</span></h1><p>A cozy home, a pocketful of seeds,<br>and a whole world waiting for you.</p><div class="welcome-form"><label for="name-input">WHAT SHOULD WE CALL YOU?</label><input id="name-input" aria-label="Your character name" maxlength="20" value="${esc(saved?.name ?? '')}" placeholder="Your name" autocomplete="off"><fieldset class="color-picker"><legend>Pick your favorite color</legend>${M.COLORS.map((c,i)=>`<button type="button" data-action="color" data-color="${c}" style="--swatch:${c}" class="${state.color===c?'selected':''}" aria-label="${['Sky blue','Rose pink','Leaf green','Honey yellow','Lavender','Terracotta'][i]}" aria-pressed="${state.color===c}"></button>`).join('')}</fieldset><button class="primary start-button" data-action="start">${saved?'Continue adventure':'Let’s play'} <span>→</span></button></div><div class="welcome-footer"><span>🌾 Grow</span><span>🎣 Discover</span><span>✨ Adventure</span></div><small class="local-note">${import.meta.env.VITE_STATIC_HOST==='true'?'Solo adventure · progress saved in this browser':'Play offline, or meet friends online'}</small></div><div class="title-caption"><span>🌿</span> WELCOME TO CLOVER VILLAGE</div></div>
+  <div id="title-screen">${renderTitleScreen({
+    saved: !!saved,
+    name: saved?.name ?? '',
+    color: state.color,
+    level: state.level ?? 1,
+    coins: state.energy ?? 0,
+    weaponId: state.gear.weapon,
+    hatId: state.gear.hat,
+    petId: state.gear.pet,
+    languageSelectorHtml: languageSelector('welcome'),
+  })}</div>
   <div id="dialog-layer" hidden><section id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><header><span id="dialog-icon" aria-hidden="true"></span><div><span id="dialog-kicker" class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="dialog-title"></h2></div><button class="close-button" data-action="close" aria-label="Close dialog">×</button></header><div id="dialog-body"></div></section></div>
   <div id="toasts" role="status" aria-live="polite"></div><div id="floating-text"></div><div id="damage-flash"></div>
 `;
@@ -237,7 +249,7 @@ const combat=new CombatSimulation({
   pet:()=>{const pet=state.gear.pet&&M.ITEMS[state.gear.pet]?.pet;return pet&&Number.isFinite(pet.dmg)&&Number.isFinite(pet.cd)&&started&&!visiting&&!fishGame&&!!world.petPen?.mayFight(world.planet,world.position,!!world.interior)?{dmg:pet.dmg!*M.gearFactor(state,state.gear.pet!),cd:pet.cd!,shot:pet.shot,x:world.companion.position.x,z:world.companion.position.z}:null;},
   // The guard dog tosses bones only while it follows you away from home (guard-dog.ts); your target first.
   dog:()=>{const g=world.guardDogs;return g&&started&&!visiting&&!fishGame&&!world.boarded&&dogMayToss(g.place,world.planet,world.position,!!world.interior)?{x:g.link.x,z:g.link.z,dmg:dogTossFactor(state.level),cd:DOG_TOSS_CD,target:world.selected?.kind==='enemy'?(world.selected as Enemy).id:null}:null;},
-  targets:()=>world.enemies,weapon:()=>M.weaponStats(state),stats:()=>M.activeStats(state),
+  targets:()=>world.arenaActive?world.arenaTargets:world.enemies,weapon:()=>M.weaponStats(state),stats:()=>M.activeStats(state),
   move:(x,z)=>{const steps=Math.max(1,Math.ceil(Math.hypot(x,z)/.2));for(let i=0;i<steps;i++)world.move(x/steps,z/steps);},
   hit:(target,impact)=>hit(target as Enemy,impact.amount,impact.stun,impact),
   clearShot:(from,to)=>clearSegment(from,to,world.obstacles,{bounds:WORLD_BOUNDS,clearance:.05}),
@@ -269,6 +281,14 @@ function showEffect(effect:CombatEffect){
     fx.burst(at,{n:12,color:['#ffffff','#9fd7ff','#6985a6'],size:.2,speed:7,up:3,y:.25,life:.52});
     fx.flash({x:effect.x,y:.7,z:effect.z},'#b5eaff',2,.16);return;
   }
+  if(fx&&effect.look==='mountain'){
+    if(effect.radius>=2){fx.ring(at,{color:'#e9ddd0',from:.5,to:effect.radius,life:.45,y:.12,thick:.32});
+      fx.burst(at,{n:22,color:['#756a60','#aa9b89','#d5c9b9'],size:.21,speed:8,up:6,y:.3,life:.8});
+      fx.burst(at,{n:12,color:['#ffffff','#ffe7b0','#b9d9f2'],glow:true,size:.13,speed:7,up:4,y:.6,life:.5});
+      fx.flash({x:effect.x,y:.8,z:effect.z},'#fff3dc',2.5,.18);
+    }else fx.burst(at,{n:8,color:['#7c7165','#c5b6a1'],size:.15,speed:5,up:3,y:.4,life:.5});
+    return;
+  }
   if(fx&&effect.look==='roots'){
     fx.ring(at,{color:'#76bd6a',from:effect.radius*.8,to:effect.radius,life:.6,y:.09,thick:.3});
     fx.burst(at,{n:4,color:['#6ead58','#b7e78e'],size:.16,speed:2,up:2,y:.2,life:.7});return;
@@ -278,7 +298,7 @@ function showEffect(effect:CombatEffect){
   if(fx&&effect.kind==='arc'){const fist=effect.radius<=1.85;fx.slash(at,effect.facing??world.facing,effect.radius+.25,effect.color,fist?{arc:1.4,life:.15,thick:.4}:{arc:Math.min(6.2,effect.arc??2.2)});return;}
   // An area hit also leaves a faint filled disc and a rim at its exact radius (skill-info.ts), so the player sees what the blast covered.
   if(fx&&effect.kind==='ring'&&effect.radius>=1.5){fx.ring(at,{color:effect.color,from:effect.radius,to:effect.radius,life:.42,y:.1,thick:1,opacity:.22});fx.ring(at,{color:effect.color,from:effect.radius,to:effect.radius*1.02,life:.42,y:.12,thick:.06,opacity:.85});}
-  if(fx&&(effect.kind==='ring'||effect.kind==='impact')){fx.ring(at,{color:effect.color,from:.3,to:Math.max(.8,effect.radius),life:.35,y:.15,thick:.25});fx.burst(at,{n:6,color:effect.color,glow:true,size:.12,speed:Math.min(8,effect.radius*1.6),up:2,y:.3,life:.4});return;}
+  if(fx&&(effect.kind==='ring'||effect.kind==='impact')){fx.ring(at,{color:effect.color,from:.3,to:Math.max(.8,effect.radius),life:.35,y:.15,thick:.25});fx.burst(at,{n:10,color:[effect.color,'#ffffff','#ffe6a8'],glow:true,size:.12,speed:Math.min(8,effect.radius*1.6),up:3,y:.3,life:.45});return;}
   combatView.effect(effect);
 }
 function emitAction(action:Omit<GameAction,'x'|'z'|'facing'>){const value={...action,x:world.position.x,z:world.position.z,facing:world.facing};for(const listener of actionListeners)listener(value);}
@@ -331,6 +351,7 @@ const DIALOG_LOOK:Record<string,[string,string]>={
   plant:['🌱','garden'],plot:['🌱','garden'],pen:['🐔','garden'],map:['🗺️','garden'],sell:['🧺','market'],shop:['🛍️','shop'],bag:['🎒','bag'],decor:['🏡','bag'],
   quests:['📖','journal'],upgrade:['💎','crystal'],chest:['📦','chest'],cook:['🍲','kitchen'],craft:['🔨','craft'],travel:['🚀','travel'],
   settings:['⚙️','calm'],help:['🧭','calm'],'fish-help':['🎣','water'],fishing:['🎣','water'],catch:['🐟','water'],death:['🌷','rose'],reset:['🌱','rose'],
+  halloffame:['🏆','crystal'],
 };
 function floating(text:string,x=world.position.x,z=world.position.z,style='item',rise=0) {world.fx?.text({x,y:rise,z},t(text),style);}
 /** Home clears bad effects (home-care.ts): a short sparkle and a toast. */
@@ -352,10 +373,39 @@ function openDialog(type:string,title:string,body:string,kicker='MAKE YOURSELF A
   bodyNode.scrollTop=reopened&&bodyNode.querySelector('.panel-tabs .active')?.textContent===tab?scroll:0;
   $('.close-button').focus({preventScroll:true});
 }
+function hallOfFame(){
+  openDialog('halloffame','Bảng Vàng Đấu Trường',`
+    <div class="hall-of-fame-panel" style="padding:12px;text-align:center;">
+      <div style="font-size:32px;margin-bottom:8px;">🏆 ⚔️ 👑</div>
+      <p style="font-weight:900;color:#ffd700;font-size:16px;margin:0 0 14px;">BẢNG VINH DANH CHIẾN BINH LA MÃ</p>
+      <div style="background:rgba(0,0,0,0.35);border-radius:14px;padding:14px;margin-bottom:14px;border:1.5px solid rgba(255,215,0,0.35);text-align:left;">
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.1);">
+          <span>🥇 <b>Chúa Tể Giác Đấu (Top 1)</b></span>
+          <span style="color:#ffd700;font-weight:800;">128 Thắng · Tỉ lệ 94%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.1);">
+          <span>🥈 <b>Lôi Đình Kiếm Ma (Top 2)</b></span>
+          <span style="color:#e2e8f0;font-weight:800;">95 Thắng · Tỉ lệ 88%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.1);">
+          <span>🥉 <b>Long Vương Bất Bại (Top 3)</b></span>
+          <span style="color:#ed8936;font-weight:800;">76 Thắng · Tỉ lệ 82%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:8px 0;margin-top:6px;background:rgba(85,230,105,0.15);border-radius:8px;padding-left:8px;padding-right:8px;">
+          <span>🎖️ <b>Bạn: ${esc(state.name || 'Chiến Binh Mới')}</b></span>
+          <span style="color:#68d391;font-weight:800;">Cấp ${state.level || 1} · Sẵn sàng khiêu chiến</span>
+        </div>
+      </div>
+      <p style="font-size:13px;color:#cbd5e0;line-height:1.5;">
+        ⚔️ <b>Cách thức thi đấu:</b> Bước vào tâm đài đấu La Mã để kích hoạt trạng thái PvP. Sử dụng vũ khí và kỹ năng (Q/W/E/R) để so tài cùng các dũng sĩ khác mà không sợ mất trang bị!
+      </p>
+    </div>
+  `,'ĐẤU TRƯỜNG LA MÃ','🏆');
+}
 // The Mirror docks with 'trying-on' even before a preview (look-shop.ts), so closing always clears it: a later panel or confirmation must not inherit it.
 function closeDialog(){endTryOn();$('#dialog-layer').classList.remove('trying-on');modal='';bagMode='bag';$('#dialog-layer').hidden=true;$('#hud').inert=false;$('#world-labels').inert=false;lastFocused?.focus();movement.clear();}
-async function start() {settle();showTrimNote();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;$('#title-screen').hidden=true;$('#hud').hidden=false;void world.renderer.compileAsync(world.scene,world.camera).catch(()=>{}); // warm the village's shaders off the first walk
-  applyMovePad();save();updateHud();updateLabels();toast(saved?t('Welcome back, {name}. Your garden missed you!',{name:state.name}):'Start small: click a garden bed to plant your first carrot.','🌱');showZone('Clover Village');}
+async function start() {playStartChime();settle();showTrimNote();const name=$<HTMLInputElement>('#name-input').value.trim().slice(0,20)||state.name;if(name!==state.name)await perform('settings',{name});started=true;world.cameraFocus=null;const titleScreenEl=$('#title-screen');titleScreenEl.style.transition='opacity 0.4s ease';titleScreenEl.style.opacity='0';titleScreenEl.style.pointerEvents='none';setTimeout(()=>{titleScreenEl.hidden=true;},400);$('#hud').hidden=false;void world.renderer.compileAsync(world.scene,world.camera).catch(()=>{}); // warm the village's shaders off the first walk
+  applyMovePad();save();updateHud();updateLabels();const mode=getActiveMode();if(mode==='offline'){toast('Chế độ Chơi Đơn (Offline): Tự do khám phá không cần mạng!','🏡');}else{toast(saved?t('Welcome back, {name}. Your garden missed you!',{name:state.name}):'Chào mừng bạn đến với Zoo Garden!','✨');}showZone('Clover Village');}
 
 /** Beds that ripened while the game was closed: the helper harvests and replants each once (helper.ts catchUp). */
 async function helperCatchUp(){const r=actionHandler?await workPerform<ReturnType<typeof Helper.catchUp>>('helperCatchUp'):change(()=>applyGameAction(state,{type:'helperCatchUp',payload:{away:catchUpAway()}}) as ReturnType<typeof Helper.catchUp>);if(r&&(r.harvested.length||r.planted.length))setTimeout(()=>toast(t('While you were away, Bolt harvested {count} crops and planted {beds} beds.',{count:r.harvested.length,beds:r.planted.length}),'🤖'),2600);}
@@ -1121,7 +1171,7 @@ frameListeners.add(dt=>house.frame(dt));frameListeners.add(dt=>challenges.tick(d
 const bench=mountUpgradeBench({state:()=>state,perform:(type,payload)=>perform(type,payload) as never,openDialog,modal:()=>modal,toast,tone:kind=>tone(kind as Parameters<typeof tone>[0]),ui:()=>({art,chips:materialChips,skills:[...BASE_SKILLS,SPECIALS[M.weaponStats({...state,gear:{...state.gear,disguise:undefined}}).special??'fist']??SPECIALS.fist],disguised:!!state.gear.disguise,weaponKind:M.weaponStats({...state,gear:{...state.gear,disguise:undefined}}).kind})});
 world.onInteract=async(e)=>{
   if(!started||uiBlocked())return;tone();if(house.interact(e))return;if(visiting&&e.kind!=='travel'&&e.kind!=='plot'){toast('Enjoy looking around. Your own garden is waiting at home.','🌷');return;}const env=world.interactEnvironment(e);if(env){if(env.message)toast(env.message);save();updateHud();if(env.openCrafting){craftStation='forge';crafting();}return;}
-  if(e.kind==='plot')plotDialog(e.index!);else if(e.kind==='sell')market();else if(e.kind==='shop')shop();else if(e.kind==='chest')storage();else if(e.kind==='upgrade')upgrades();else if(e.kind==='cook')cooking();else if(e.kind==='craft'){craftStation='craft';crafting();}else if(e.kind==='travel')planets();else if(e.kind==='fish')fish(e);
+  if(e.kind==='plot')plotDialog(e.index!);else if(e.kind==='sell')market();else if(e.kind==='shop')shop();else if(e.kind==='chest')storage();else if(e.kind==='upgrade')upgrades();else if(e.kind==='cook')cooking();else if(e.kind==='craft'){craftStation='craft';crafting();}else if(e.kind==='travel')planets();else if(e.kind==='fish')fish(e);else if(e.kind==='halloffame')hallOfFame();
   else if(e.kind==='pen')penTap();
   else if(e.kind==='cage')crew.tapCage(e);
   else if(e.kind==='friend'&&e.index!==undefined)friendDialog(FRIEND_IDS[e.index]);
@@ -1172,14 +1222,12 @@ frameListeners.add(dt=>{for(const [uid,meta]of networkDrops){const d=drops.sim.d
 frameListeners.add(dt=>helperView.update(dt,{state:!flight&&world.planet==='home'?world.state:null,act:started&&!visiting&&world.state===state&&!document.hidden,now:Date.now(),harvest:helperHarvest,plant:helperPlant,held:heldBed()}));
 frameListeners.add(dt=>{farmHelperController.sync();farmHelperView.update(dt,{state:!flight&&world.planet==='home'?world.state:null,context:world.root,act:!!farmHelperContext(),pending:farmHelperController.pending,now:Date.now(),position:uid=>world.farmView?.positionOf(uid)??undefined,work:task=>farmHelperController.work(task)});});
 function grantDefeat(e:{id:string;xp:number;boss:boolean;type?:string;name?:string;x?:number;z?:number;helper?:boolean}){
-  if(actionHandler)return;
-  const defeat=()=>M.grantDefeat(state,e.type??'slime',e.xp,e.boss,Math.random,false),loot=change(()=>e.helper?asHelper(defeat):defeat());// a pet's kill is not the player's for the timed challenge
-  // Experience flies in as cyan orbs; the loot is tossed onto the ground where the creature fell.
+  // Online rewards are committed by the server; the confirmed defeat still needs local feedback.
+  if(!actionHandler){const defeat=()=>M.grantDefeat(state,e.type??'slime',e.xp,e.boss,Math.random,false),loot=change(()=>e.helper?asHelper(defeat):defeat());
+    drops.spawnLoot(loot,e.x??world.position.x,e.z??world.position.z);}
   const x=e.x??world.position.x,z=e.z??world.position.z;
-  world.fx?.orbs({x,z},Math.min(8,3+Math.floor(e.xp/20)),'#7ff0ff',()=>world.position,()=>tone('coin'));
-  floating(`+${e.xp} EXP`,x,z,'xp',.5);
-  // Loot lands on the ground (drops.ts); picking it up shows the +n float.
-  drops.spawnLoot(loot,x,z);
+  world.fx?.orbs({x,z},Math.min(14,7+Math.floor(e.xp/15)),['#7ff0ff','#a6f7aa','#fff2a6','#c5b7ff'],()=>world.position,()=>tone('coin'),.65);
+  floating(`+${Math.round(e.xp*10)/10} EXP`,x,z,'xp big',.65);
   if(e.boss){toast(`${e.name??'Boss'} defeated!`,'👑');tone('level');}
 }
 function hit(e:Enemy,damage:number,stun=0,impact?:CombatHit,remote=false,hazard=false){
@@ -1261,8 +1309,10 @@ function tryOn(id:M.ItemId){
 function endTryOn(){if(!tryingOn&&!world.tryOnGear&&!world.tryOnLook)return;tryingOn=null;world.tryOnGear=null;world.tryOnLook=null;$('#dialog-layer').classList.remove('trying-on');world.refreshPlayer();}
 function basicAttack(e?:Enemy){
   if(!started||uiBlocked()||visiting||combatTimers.attackCooldown>0)return;
+  if(world.arenaActive&&Date.now()<world.arenaStunUntil)return;
+  if(world.arenaActive)e=undefined;
   prepareCombatWeapon();
-  if(combat.basic(e)){const stats=M.activeStats(state),weapon=M.weaponStats(state);combatTimers.attackCooldown=(weapon.cd??.4)/Math.max(.2,1+stats.haste);const volt=weapon.shot==='volt';world.playerAttack(weapon.kind,volt?'#bfefff':undefined);tone(volt?'zap':weapon.kind==='gun'?'shoot':weapon.kind==='sword'?'swing':'punch');emitAction({kind:'basic',targetId:e?.id});}
+  if(combat.basic(e)){const stats=M.activeStats(state),weapon=M.weaponStats(state);combatTimers.attackCooldown=Math.max(.12,(weapon.cd||.5)/Math.max(.2,1+stats.haste));const volt=weapon.shot==='volt';world.playerAttack(weapon.kind,volt?'#bfefff':undefined);tone(volt?'zap':weapon.kind==='gun'?'shoot':weapon.kind==='sword'?'swing':'punch');emitAction({kind:'basic',targetId:e?.id});}
 }
 world.onAttackEnemy=basicAttack;
 /** The tooltip and long-press tip of skill slot i, with the numbers at the current level (skill-info.ts). */
@@ -1278,6 +1328,7 @@ const readyWas=[0,0,0,0];
 function skillList(){const disguise=state.gear.disguise?M.DISGUISES[state.gear.disguise]:null;return disguise?.skills??[...BASE_SKILLS,SPECIALS[M.weaponStats(state).special??'fist']??SPECIALS.fist];}
 function skill(index:number){
   if(!started||uiBlocked()||visiting||cooldowns[index]>0||index<0||index>3)return;
+  if(world.arenaActive&&Date.now()<world.arenaStunUntil)return;
   prepareCombatWeapon();
   const disguise=state.gear.disguise,weapon=M.weaponStats(state),skills=skillList();
   if(!(disguise?combat.disguise(disguise,index):combat.skill(index,weapon.special??'fist')))return;
@@ -1322,7 +1373,7 @@ export const gameBridge:GameBridge={
   applyRemoteHit(id,damage,stun=0,impact){const enemy=world.enemies.find(e=>e.id===id);if(enemy)hit(enemy,damage,stun,impact,true);},
   applyRemoteStatus(id,kind,duration){const enemy=world.enemies.find(e=>e.id===id);if(enemy)world.statusEnemy(enemy,kind,Math.min(12,duration));},
   applyRemoteMove(id,x,z){const enemy=world.enemies.find(e=>e.id===id);if(enemy)moveEnemy(enemy,x,z);},
-  applySharedKill(id,xp,boss,type){if(sharedKills.has(id))return;sharedKills.add(id);if(sharedKills.size>500)sharedKills.delete(sharedKills.values().next().value!);const enemy=world.enemies.find(e=>e.id===id);grantDefeat({id,xp,boss,type,x:enemy?.x,z:enemy?.z});},
+  applySharedKill(id,xp,boss,type,eventId,x,z){const key=eventId??id;if(sharedKills.has(key))return;sharedKills.add(key);if(sharedKills.size>500)sharedKills.delete(sharedKills.values().next().value!);const enemy=world.enemies.find(e=>e.id===id);grantDefeat({id,xp,boss,type,x:x??enemy?.x,z:z??enemy?.z});},
   applyRemoteEffect(effect){showEffect(effect);},
   applyRemoteDamage(amount,source){world.onDamage(amount,source==='shot'||source==='hazard'?source:'melee');},
   setVisiting(owner,home){
@@ -1631,6 +1682,10 @@ function frame(now:number){frameTime=frameTime*.9+(now-previous)*.1;const realDt
   // browser throttles rendering, and collisions do not tunnel at a low frame rate. At most four steps
   // run per frame; a longer stall turns into slow motion rather than a spiral of ever longer frames.
   updateContextWeapon();joystick.update();
+  if(!started){
+    const t=performance.now()*0.00035;
+    world.cameraFocus=new Vector3(Math.cos(t)*15,1.2,Math.sin(t)*15);
+  }
   for(const step of frameSteps(dt)){const active=started&&!uiBlocked()&&!document.hidden,combatActive=started&&!document.hidden&&(!uiBlocked()||!!network.role);combatTimers.advance(step,combatActive);combat.update(step,combatActive);world.movementLocked=combat.locksMovement;world.playerFlying=(combat.statuses.flight??0)>0;world.playerStealth=(combat.statuses.stealth??0)>0;world.playerSizeScale=combat.visualScale;world.playerShield=combat.invulnerable;world.playerBat=(combat.statuses.bats??0)>0;gestures.update(step,active);world.update(step,active,false,started&&!document.hidden&&(active||!!network.role));if(active)world.player.position.y+=combat.airborne;combatView.update(step,combat.projectiles,combatActive,combat.allies);if(started&&!document.hidden&&!actionHandler)M.tickEffects(state,step);if(fishGame&&!document.hidden)updateFishing(step);}
   // Landing from the ground slam squashes the explorer and jolts the camera.
   const airborne=combat.airborne>0;if(wasAirborne&&!airborne){world.landT=.25;slamImpact();}wasAirborne=airborne;
@@ -1650,6 +1705,14 @@ function frame(now:number){frameTime=frameTime*.9+(now-previous)*.1;const realDt
   if(elapsed>8){elapsed=0;if(started)save();}requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+document.addEventListener('click', e => {
+  const modeCard = (e.target as HTMLElement).closest<HTMLElement>('.mode-card');
+  if (modeCard && modeCard.dataset.mode) {
+    setActiveMode(modeCard.dataset.mode as 'online' | 'offline');
+    tone('click');
+  }
+});
 
 
 function refreshDocumentLanguage(){

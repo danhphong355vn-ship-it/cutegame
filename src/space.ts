@@ -16,6 +16,7 @@ export const STAR_MAP: Record<PlanetId, StarPlanet> = {
   ocean: { id: 'ocean', x: 440, z: 120, r: 23, ring: '#bff0ff' },
   cloud: { id: 'cloud', x: -80, z: -500, r: 18, ring: '#ffffff' },
   shadow: { id: 'shadow', x: 400, z: -470, r: 19, ring: '#8a5aff' },
+  arena: { id: 'arena', x: 0, z: -260, r: 20, ring: '#ffd700' },
 };
 /** Past this distance from home the ship is pulled back. */
 export const SPACE_EDGE = 680;
