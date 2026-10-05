@@ -9,12 +9,12 @@ function feed(governor: GraphicsGovernor, fps: number, seconds: number, playing 
   return changes;
 }
 
-test('phones and desktops start equally sharp, capped by the screen density', () => {
+test('mobile Auto starts balanced without shadows while desktop starts sharp', () => {
   const p = new GraphicsGovernor(phone), d = new GraphicsGovernor(desktop), lowDensity = new GraphicsGovernor({ mobile: false, devicePixelRatio: 1 });
-  assert.equal(p.level, 'high'); assert.equal(p.ratio, QUALITY.high.ratio);
+  assert.equal(p.level, 'medium'); assert.equal(p.ratio, QUALITY.medium.ratio); assert.equal(p.profile.shadow, 0);
   assert.equal(d.level, 'high'); assert.equal(d.ratio, 2);
   assert.equal(lowDensity.ratio, 1);
-  assert.equal(new GraphicsGovernor({ mobile: true, devicePixelRatio: 1.5 }).ratio, 1.5);
+  assert.equal(new GraphicsGovernor({ mobile: true, devicePixelRatio: 1.5 }).ratio, 1.25);
 });
 
 /** Feed frames until the governor changes something (or give up after a minute). */
@@ -44,7 +44,7 @@ test('a short slow spike lowers quality for the moment but is never remembered',
   feed(g, 20, 24.5); assert.equal(g.level, 'low'); assert.equal(g.ratio, .7);
   assert.equal(g.takeSave(), false); assert.equal(g.toJSON().autoLevel, null, 'the spike is not saved');
   feed(g, 60, 14); assert.equal(g.level, 'medium', 'good frames bring the level back'); assert.equal(g.ratio, 1.25);
-  feed(g, 60, 70); assert.equal(g.level, 'high'); assert.equal(g.ratio, 2); assert.equal(g.takeSave(), false); assert.deepEqual(g.toJSON(), { setting: 'auto', autoLevel: null, autoVersion: AUTO_GRAPHICS_VERSION });
+  feed(g, 60, 70); assert.equal(g.level, 'medium'); assert.equal(g.ratio, 1.25); assert.equal(g.takeSave(), false); assert.deepEqual(g.toJSON(), { setting: 'auto', autoLevel: null, autoVersion: AUTO_GRAPHICS_VERSION });
 });
 
 test('a level that holds through a minute of play is remembered for the next visit', () => {
@@ -54,7 +54,7 @@ test('a level that holds through a minute of play is remembered for the next vis
   assert.deepEqual(g.toJSON(), { setting: 'auto', autoLevel: 'low', autoVersion: AUTO_GRAPHICS_VERSION });
   assert.equal(new GraphicsGovernor(phone, g.toJSON()).level, 'low');
   // Menus and the settling seconds after landing break a slow streak.
-  const paused = new GraphicsGovernor(phone); feed(paused, 20, 2.5); feed(paused, 20, 5, false); feed(paused, 20, 1.5); assert.equal(paused.ratio, 2);
+  const paused = new GraphicsGovernor(phone); feed(paused, 20, 2.5); feed(paused, 20, 5, false); feed(paused, 20, 1.5); assert.equal(paused.ratio, 1.25);
 });
 
 test('a step up that fails soon after waits twice as long before the next try', () => {
@@ -69,39 +69,39 @@ test('a step up that fails soon after waits twice as long before the next try', 
 test('mobile auto reduces rendering work before resolution and restores effects after sustained recovery', () => {
   const g = new GraphicsGovernor(phone), start = g.profile;
   assert.equal(nextChange(g, 30), 'effects');
-  assert.equal(g.level, 'high'); assert.equal(g.ratio, 2, 'the first fallback keeps the original pixel dimensions');
+  assert.equal(g.level, 'medium'); assert.equal(g.ratio, 1.25, 'the first fallback keeps the original pixel dimensions');
   assert.equal(g.profile.ratio, start.ratio); assert.equal(g.profile.outlines, start.outlines);
-  assert.equal(g.profile.shadow, 0, 'remove the complete shadow pass');
+  assert.equal(g.profile.shadow, 0, 'the shadow pass remains disabled');
   assert.ok(g.profile.particles < .6, 'world draws half of decorative grass/flowers at this density');
   assert.deepEqual(g.toJSON(), { setting: 'auto', autoLevel: null, autoVersion: AUTO_GRAPHICS_VERSION }, 'a temporary effects fallback is never saved as low quality');
   feed(g, 60, 10); assert.equal(g.profile.shadow, 0, 'brief recovery cannot flicker shadows');
   assert.equal(nextChange(g, 60), 'effects');
-  assert.equal(g.profile, start); assert.equal(g.ratio, 2);
+  assert.equal(g.profile, start); assert.equal(g.ratio, 1.25);
 
   assert.equal(nextChange(g, 30), 'effects');
   assert.equal(nextChange(g, 30), 'ratio', 'resolution remains a last fallback if less drawing is still insufficient');
-  assert.equal(g.ratio, 1.75);
+  assert.equal(g.ratio, 1);
   g.choose('high'); feed(g, 20, 20);
   assert.equal(g.profile, QUALITY.high); assert.equal(g.ratio, 2, 'explicit Sharp remains sharp, including full shadows');
   g.choose('medium'); feed(g, 20, 20);
   assert.equal(g.profile, QUALITY.medium); assert.equal(g.ratio, 1.25, 'explicit Balanced remains fixed');
 });
 
-test('a remembered Sharp auto level also restores mobile shadows after recovery', () => {
+test('a remembered Sharp auto level restores mobile effect density after recovery', () => {
   const g = new GraphicsGovernor(phone, { setting: 'auto', autoLevel: 'high', autoVersion: AUTO_GRAPHICS_VERSION });
   assert.equal(nextChange(g, 30), 'effects');
-  assert.equal(g.ratio, 2); assert.equal(g.profile.outlines, true);
+  assert.equal(g.ratio, 1.75); assert.equal(g.profile.outlines, true);
   assert.equal(nextChange(g, 60), 'effects');
-  assert.equal(g.level, 'high'); assert.equal(g.profile, QUALITY.high);
+  assert.equal(g.level, 'high'); assert.equal(g.profile.particles, .8); assert.equal(g.profile.shadow, 0);
 });
 
 test('old mobile automatic levels reset once while current learned and explicit choices remain intact', () => {
   for (const autoLevel of ['low', 'medium'] as const) {
     const g = new GraphicsGovernor(phone, { setting: 'auto', autoLevel });
-    assert.equal(g.level, 'high'); assert.equal(g.ratio, 2);
+    assert.equal(g.level, 'medium'); assert.equal(g.ratio, 1.25);
     assert.equal(g.takeSave(), true, 'persist the migration immediately'); assert.equal(g.takeSave(), false);
     const reloaded = new GraphicsGovernor(phone, g.toJSON());
-    assert.equal(reloaded.level, 'high'); assert.equal(reloaded.takeSave(), false, 'migration runs only once');
+    assert.equal(reloaded.level, 'medium'); assert.equal(reloaded.takeSave(), false, 'migration runs only once');
     const learned = new GraphicsGovernor(phone, { setting: 'auto', autoLevel, autoVersion: AUTO_GRAPHICS_VERSION });
     assert.equal(learned.level, autoLevel); assert.equal(learned.takeSave(), false, 'new performance measurements survive reload');
   }
