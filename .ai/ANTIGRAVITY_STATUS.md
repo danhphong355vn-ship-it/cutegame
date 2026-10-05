@@ -3,11 +3,11 @@
 Status: DONE
 
 Task:
-Sửa lỗi trạm tàu không cất cánh khi gặp lỗi 409 revision trong src/online.ts: sau lỗi 409, reset submitted và cập nhật expectedRevision mới từ session để action job được retry với revision mới, giúp perform('launch') hoàn thành và launchPending không bị kẹt.
+Xây dựng Đấu Trường Võ Đài 3D hoàn chỉnh (Arena 3D Stadium): sàn đá bát giác riêng biệt, 8 cột trụ giác đấu, đuốc lửa cháy rực rỡ, 3 tầng dây đài neon phát sáng 3D rõ nét, dọn sạch địa hình đá/cây thừa trong lòng võ đài và hiệu ứng kết giới PvP.
 
 Claimed files:
 
-Last commit: 1d5c0af
+Last commit: b8178a7
 
 Notes:
-Đã hoàn thành sửa lỗi 409 revision trong src/online.ts và bổ sung bài test tests/online-launch.test.mjs. Toàn bộ 35/35 unit test liên quan đều pass, build thành công 100%. Antigravity giải phóng claimed files để Codex tiếp tục phần việc còn lại khi sẵn sàng.
+Hoàn thành tạo module src/arena-view.ts và tích hợp vào src/online.ts. Test và build pass 100%. Antigravity giải phóng claimed files.
