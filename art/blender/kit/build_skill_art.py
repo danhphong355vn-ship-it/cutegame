@@ -1,82 +1,62 @@
-"""Original low-poly skill props. Run Blender -b --python this_file (optional --render)."""
-import os
-import sys
-import math
-import bpy
-sys.path.insert(0, os.path.dirname(__file__))
-from style import reset_scene, mat, sphere, cyl, join, export_glb, studio, game_camera, render
-
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+"""Original stylized skill sculpture kit; Blender -b --python this_file -- --render."""
+import os,sys,math,random,bpy
+sys.path.insert(0,os.path.dirname(__file__))
+from style import reset_scene,mat,sphere,cyl,join,export_glb,studio,game_camera,render
+ROOT=os.path.abspath(os.path.join(os.path.dirname(__file__),'../../..'))
 reset_scene()
-stone = mat('Skill stone', '#827B91')
-light = mat('Skill ridge', '#C4BCD2')
-pink = mat('Skill petals', '#FF82BB')
-gold = mat('Skill pollen', '#FFD668')
-green = mat('Skill leaves', '#55B965')
-wing = mat('Fairy wing', '#BBEDFF', emit='#A3DDFF', emit_strength=.2)
-models = []
-
-pieces = []
-for i, (x,y,z,r,h) in enumerate([(0,0,0,1.05,2.5),(-.65,.15,0,.63,1.6),(.6,.1,0,.64,1.9),(0,.65,0,.65,1.4)]):
-    bpy.ops.mesh.primitive_cone_add(vertices=7, radius1=r, radius2=.04, depth=h, location=(x,y,z+h/2))
-    obj = bpy.context.object
-    obj.data.materials.append(stone)
-    obj.data.materials.append(light)
-    for face in obj.data.polygons:
-        face.material_index = 1 if face.center.x > 0 and face.normal.z > .1 else 0
-    pieces.append(obj)
-models.append(join(pieces, 'skill_mountain'))
-
-pieces = [cyl('stem', .055, .52, (0,0,.26), green, verts=6, bev=0)]
+stone=mat('Basalt','#646B87');ridge=mat('Rock faces','#A4AEC4');pink=mat('Rose petals','#FF5D9D');pale=mat('Petal tips','#FFD1E9');gold=mat('Pollen','#FFCE45');green=mat('Jade leaves','#38AA70');vein=mat('Leaf vein','#B6F18D');wing=mat('Wing membrane','#ACD8FF');edge=mat('Wing filigree','#9471DA');bark=mat('Living wood','#85533D')
+models=[]
+def tube(name,points,r,material):
+    c=bpy.data.curves.new(name,'CURVE');c.dimensions='3D';c.bevel_depth=r;c.bevel_resolution=1;c.resolution_u=3
+    sp=c.splines.new('POLY');sp.points.add(len(points)-1)
+    for p,co in zip(sp.points,points):p.co=(*co,1)
+    o=bpy.data.objects.new(name,c);bpy.context.scene.collection.objects.link(o);o.data.materials.append(material);bpy.ops.object.select_all(action='DESELECT');o.select_set(True);bpy.context.view_layer.objects.active=o;bpy.ops.object.convert(target='MESH');return bpy.context.object
+# Uneven, fractured ridges with a broad broken base rather than perfect cones.
+rng=random.Random(12);pieces=[]
+for x,y,r,h in [(0,0,.83,2.3),(-.6,.18,.6,1.55),(.6,.23,.62,1.8),(0,-.53,.52,1.1)]:
+    verts=[]
+    for layer,(z,rad) in enumerate([(0,r),(.3*h,r*.95),(.73*h,r*.46),(h,r*.08)]):
+        for j in range(7):
+            a=j*math.tau/7;rr=rad*rng.uniform(.78,1.17);verts.append((x+rr*math.cos(a)+layer*.055,y+rr*math.sin(a),z+rng.uniform(-.06,.06)))
+    faces=[]
+    for l in range(3):
+        for j in range(7):faces.append((l*7+j,l*7+(j+1)%7,(l+1)*7+(j+1)%7,(l+1)*7+j))
+    faces += [tuple(reversed(range(7))),tuple(range(21,28))]
+    mesh=bpy.data.meshes.new('fracture');mesh.from_pydata(verts,[],faces);o=bpy.data.objects.new('ridge',mesh);bpy.context.scene.collection.objects.link(o);mesh.materials.append(stone);mesh.materials.append(ridge)
+    for i,p in enumerate(mesh.polygons):p.material_index=int(i%7 in [1,2])
+    pieces.append(o)
+models.append(join(pieces,'skill_mountain'))
+def blossom(x,y,z,scale=1):
+    out=[]
+    for ring in range(2):
+        for i in range(6):
+            a=(i+ring*.5)*math.tau/6;r=(.23 if ring==0 else .13)*scale
+            o=sphere('cupped petal',1,(x+r*math.cos(a),y+r*math.sin(a),z+ring*.06*scale),pink if ring==0 else pale,segs=10,rings=5,scale=(.23*scale,.115*scale,.065*scale));o.rotation_euler=(.2*math.sin(a),-.2*math.cos(a),a);out.append(o)
+    out.append(sphere('gold heart',.095*scale,(x,y,z+.08*scale),gold,segs=10,rings=5))
+    return out
+pieces=[tube('curved stem',[(0,0,0),(.04,0,.25),(0,0,.55)],.035,green)]+blossom(0,0,.57)
+for side in [-1,1]:pieces.append(sphere('pointed leaf',1,(side*.12,0,.25),green,segs=8,rings=4,scale=(.17,.07,.035)))
+models.append(join(pieces,'skill_flower'))
+points=[(.34*math.cos(i*.22),.34*math.sin(i*.22),i*.045) for i in range(36)]
+pieces=[tube('spiral vine',points,.055,green)]
+for i in [6,13,21,29]:
+    x,y,z=points[i];a=i*.22;o=sphere('vine leaf',1,(x*1.4,y*1.4,z),green,segs=8,rings=4,scale=(.19,.065,.03));o.rotation_euler.z=a;pieces.append(o)
+models.append(join(pieces,'skill_roots'))
+pieces=[tube('curving trunk',[(0,0,0),(-.1,0,.55),(.12,0,1.1),(0,0,1.6)],.1,bark)]
 for i in range(5):
-    a = i*math.tau/5
-    petal = sphere('petal', .2, (.19*math.cos(a),.19*math.sin(a),.57), pink, segs=8, rings=4, scale=(1.2,.8,.35))
-    petal.rotation_euler.z = a
-    pieces.append(petal)
-pieces.append(sphere('pollen', .12, (0,0,.6), gold, segs=8, rings=4))
-models.append(join(pieces, 'skill_flower'))
-
-pieces = []
-curve=bpy.data.curves.new('Binding vine','CURVE')
-curve.dimensions='3D'
-curve.bevel_depth=.085
-curve.bevel_resolution=1
-spline=curve.splines.new('POLY')
-spline.points.add(23)
-for i,p in enumerate(spline.points):
-    a=i*.32
-    p.co=(.35*math.cos(a),.35*math.sin(a),i*.065,1)
-vine=bpy.data.objects.new('Binding vine',curve)
-bpy.context.collection.objects.link(vine)
-vine.data.materials.append(green)
-bpy.context.view_layer.objects.active=vine
-vine.select_set(True)
-bpy.ops.object.convert(target='MESH')
-pieces.append(bpy.context.object)
-for i in range(12):
-    a=i*.65
-    if i%3==0:
-        pieces.append(sphere('leaf', .2, (.52*math.cos(a),.52*math.sin(a),i*.12), green,segs=6,rings=4,scale=(1,.35,.5)))
-models.append(join(pieces, 'skill_roots'))
-
-pieces=[cyl('Magic trunk',.16,1.35,(0,0,.675),green,verts=7,bev=0)]
-for i in range(5):
-    a=i*math.tau/5
-    pieces.append(sphere('Leaf crown',.42,(.38*math.cos(a),.38*math.sin(a),1.3+i*.06),green,segs=8,rings=5,scale=(1,1,.6)))
-    pieces.append(sphere('Magic blossom',.16,(.52*math.cos(a),.52*math.sin(a),1.4+i*.06),pink,segs=8,rings=4))
+    a=i*math.tau/5;x=.48*math.cos(a);y=.48*math.sin(a);z=1.22+(i%2)*.25
+    pieces.append(tube('branch',[(0,0,.7),(x*.6,y*.6,1.15),(x,y,z)],.045,bark));pieces+=blossom(x,y,z,.8)
+    o=sphere('branch leaf',1,(x*.8,y*.8,z-.1),green,segs=8,rings=4,scale=(.3,.13,.08));o.rotation_euler.z=a;pieces.append(o)
 models.append(join(pieces,'skill_tree'))
-
-pieces = []
-for x,z,length in [(.42,.25,.65),(.3,-.2,.45)]:
-    pieces.append(sphere('wing lobe',1,(x,0,z),wing,segs=10,rings=6,scale=(length,.035,.32)))
-models.append(join(pieces, 'skill_wing'))
-
-# Each kit root is at the origin. The runtime gives every instance its placement.
-path=os.path.join(ROOT,'public/assets/models/skill-art.glb')
-export_glb(models,path)
-print('SKILL_ART_BYTES',os.path.getsize(path))
+# Leaf-shaped lobes with explicit contrasting ribs and a tapered tip.
+pieces=[]
+for z,size in [(.22,1),(-.2,.65)]:
+    points=[(0,0,z),(.3*size,0,z+.28*size),(.86*size,0,z+.33*size),(1.02*size,0,z+.08*size),(.63*size,0,z-.17*size),(.18*size,0,z-.1*size)]
+    mesh=bpy.data.meshes.new('wing leaf');mesh.from_pydata(points,[],[(0,1,2,3),(0,3,4,5)]);o=bpy.data.objects.new('membrane',mesh);bpy.context.scene.collection.objects.link(o);mesh.materials.append(wing);mod=o.modifiers.new('two sided membrane','SOLIDIFY');mod.thickness=.014;pieces.append(o)
+    pieces.append(tube('wing border',points+[points[0]],.015,edge));pieces.append(tube('wing rib',[points[0],(.5*size,-.012,z+.08*size),points[3]],.012,edge))
+models.append(join(pieces,'skill_wing'))
+export_glb(models,os.path.join(ROOT,'public/assets/models/skill-art.glb'))
 if '--render' in sys.argv:
-    for i,obj in enumerate(models): obj.location.x=(i-1.5)*2.5
-    studio(size=(1200,700))
-    game_camera(target=(0,0,1),ortho_scale=12)
-    render(os.path.join(ROOT,'art/previews/kit/skill-art.png'))
+    for i,o in enumerate(models):o.location.x=(i-2)*2.4
+    studio(size=(1400,700));game_camera(target=(0,0,.8),ortho_scale=12);render(os.path.join(ROOT,'art/previews/kit/skill-art.png'))
+
