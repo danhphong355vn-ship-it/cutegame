@@ -453,15 +453,15 @@ test('superhero W rises and lands on both local and remote avatars',()=>{
 
 test('sustained flight keeps a flying stance instead of the walking cycle locally and remotely',()=>{
  const local=world();local.build('home');local.refreshPlayer();local.playerFlying=true;local.moving=true;local.disguiseT=local.punchT=local.spinT=0;
- (local as unknown as {animatePlayer(dt:number):void}).animatePlayer(.12);
+ for(let i=0;i<20;i++)(local as unknown as {animatePlayer(dt:number):void}).animatePlayer(.12);
  assert.ok(local.player.getObjectByName('arm-left')!.rotation.x<-1);
- assert.ok(Math.abs(local.player.rotation.x-Math.PI/6)<1e-8);
+ assert.ok(Math.abs(local.player.rotation.x-Math.PI/10)<1e-8);
  assert.ok(Math.abs(local.player.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
  const remote=world();remote.addRemotePlayer('friend',{x:0,z:0,y:1.7,moving:true,visual:{flight:1.7}});
  const model=remote.remotePlayers.get('friend')!.mesh;
- (remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.12);
+ for(let i=0;i<20;i++)(remote as unknown as {animateRemotes(dt:number):void}).animateRemotes(.12);
  assert.ok(model.getObjectByName('arm-left')!.rotation.x<-1);
- assert.ok(Math.abs(model.rotation.x-Math.PI/6)<1e-8);
+ assert.ok(Math.abs(model.rotation.x-Math.PI/10)<1e-8);
  assert.ok(Math.abs(model.getObjectByName('leg-left')!.rotation.x-.18)<1e-8);
  assert.ok(model.position.y>1.6&&model.position.y<1.8,'flight height is not added twice');
 });

@@ -43,6 +43,7 @@ export const KIT_FILES = {
   farm: modelUrl('farm.glb'),
   creatures: modelUrl('creatures.glb'),
   forestBirds: modelUrl('forest-birds.glb'),
+  dragon: modelUrl('dragon.glb'),
   helper: modelUrl('helper.glb'),
   cage: modelUrl('cage.glb'),
 } as const;

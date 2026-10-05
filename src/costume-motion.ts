@@ -39,12 +39,38 @@ export function poseCostume(l:Limbs,motion:CostumeMotion,remaining:number) {
 }
 
 export function poseFlight(l:Limbs,fairy:boolean,moving:boolean,time:number) {
-  const tilt=fairy?.14:Math.PI/6;
+  const tilt=fairy?.14:Math.PI/10;
   l.legL?.rotation.set(moving?.18:.12,0,-.1);l.legR?.rotation.set(moving?.22:.12,0,.1);
   l.armL?.rotation.set(moving?(fairy?-.6:-1.65):-.22,0,fairy?-.6:-.26);
   l.armR?.rotation.set(moving?(fairy?-.6:-1.65):-.22,0,fairy?.6:.26);
   return {lean:moving?tilt:0,lift:Math.sin(time*(fairy?3.4:4))*.07};
 }
+
+/** Keep both solidified cloth surfaces on one hinge, outside the thick ink hull. */
+export function prepareCostume(model:T.Object3D) {
+  if(model.getObjectByName('cape-hinge'))return;
+  const cloth:T.Mesh[]=[];
+  model.traverse(o=>{if(o instanceof T.Mesh&&o.name.includes('cape'))cloth.push(o);});
+  const parent=cloth[0]?.parent;if(!parent)return;
+  model.updateMatrixWorld(true);
+  const bounds=new T.Box3();for(const mesh of cloth)bounds.expandByObject(mesh);
+  const shoulder=bounds.getCenter(new T.Vector3());shoulder.y=bounds.max.y;
+  const hinge=new T.Group();hinge.name='cape-hinge';hinge.position.copy(parent.worldToLocal(shoulder));parent.add(hinge);
+  for(const mesh of cloth){mesh.userData.noOutline=true;mesh.castShadow=false;mesh.receiveShadow=false;hinge.attach(mesh);}
+}
+
+const flights=new WeakMap<T.Object3D,{move:number;air:number}>();
+/** Exponential blends are independent of frame rate and shared by local/remote avatars. */
+export function smoothFlight(model:T.Object3D,l:Limbs,fairy:boolean,flying:boolean,moving:boolean,time:number,dt:number,active=true) {
+  let state=flights.get(model);if(!state){state={move:0,air:0};flights.set(model,state);}
+  const k=1-Math.exp(-Math.max(0,dt)*9);
+  state.move+=(Number(flying&&moving)-state.move)*k;state.air+=(Number(flying)-state.air)*k;
+  if(!active)return {lean:0,lift:0,air:state.air,weight:0};
+  const target=limbTargets(fairy,state.move);
+  for(const key of ['armL','armR','legL','legR'] as const){const limb=l[key];if(limb){limb.rotation.x+=(target[key][0]-limb.rotation.x)*state.air;limb.rotation.z+=(target[key][1]-limb.rotation.z)*state.air;}}
+  return {lean:state.move*(fairy?.14:Math.PI/10),lift:Math.sin(time*(fairy?3.4:4))*.07*state.air,air:state.air,weight:state.air};
+}
+function limbTargets(fairy:boolean,m:number){return {armL:[-.22+m*((fairy?-.6:-1.65)+.22),fairy?-.6:-.26],armR:[-.22+m*((fairy?-.6:-1.65)+.22),fairy?.6:.26],legL:[.12+m*.06,-.1],legR:[.12+m*.1,.1]};}
 
 /** Accessory animation is cached per avatar; shared GLB geometry is never modified. */
 const accessories=new WeakMap<T.Object3D,{cape?:T.Object3D; oldWings:T.Object3D[]; wings:T.Group[]}>();
@@ -52,8 +78,8 @@ export function animateCostume(model:T.Object3D,id:string|undefined,flying:boole
   if(id!=='dz_fairy'&&id!=='dz_superhero')return;
   requestSkillArt();
   let entry=accessories.get(model);
-  if(!entry){entry={oldWings:[],wings:[]};model.traverse(o=>{if(o.name.includes('cape')&&!entry!.cape)entry!.cape=o;if(o.name.includes('wings'))entry!.oldWings.push(o);});accessories.set(model,entry);}
-  if(id==='dz_superhero'&&entry.cape){entry.cape.rotation.x=Math.sin(time*4)*.045+(flying?.16:0);}
+  if(!entry){prepareCostume(model);entry={cape:model.getObjectByName('cape-hinge'),oldWings:[],wings:[]};model.traverse(o=>{if(o.name.includes('wings'))entry!.oldWings.push(o);});accessories.set(model,entry);}
+  if(id==='dz_superhero'&&entry.cape){entry.cape.rotation.x=Math.sin(time*4)*.045+(flights.get(model)?.air??Number(flying))*.16;}
   if(id==='dz_fairy'){
     if(!entry.wings.length&&skillArt.ready){const body=part(model,'body')??model;
       for(const side of [-1,1]){const wing=skillArt.instance('skill_wing');if(!wing)continue;wing.name=`fairy-flight-wing-${side}`;wing.position.set(side*.08,.25,-.38);wing.scale.x=side;body.add(wing);entry.wings.push(wing);}

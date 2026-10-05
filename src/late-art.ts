@@ -13,7 +13,7 @@ const ROUTES: Array<[LateArt, readonly string[]]> = [
   ['refined', [...Object.values(REFINED_ASSET_FILES), KIT_FILES.space]],
   ['scenery', [KIT_FILES.scenery, KIT_FILES.wilds, KIT_FILES.worldsBright, KIT_FILES.worldsHarsh, KIT_FILES.worldsDressing]],
   ['avatars', [HERO_FILE, KIT_FILES.wear, KIT_FILES.weapons, KIT_FILES.disguises, KIT_FILES.pets]],
-  ['creatures', [KIT_FILES.creatures, KIT_FILES.forestBirds, titanKitFile]],
+  ['creatures', [KIT_FILES.creatures, KIT_FILES.forestBirds, KIT_FILES.dragon, titanKitFile]],
   ['crops', [KIT_FILES.crops, KIT_FILES.fruitCrops]],
   ['farm', [KIT_FILES.farm]],
   ['fish', [KIT_FILES.fish]],

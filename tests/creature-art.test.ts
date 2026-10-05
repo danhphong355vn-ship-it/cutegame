@@ -19,7 +19,7 @@ function glb(path: string) {
 }
 
 test('creatures.glb has every redrawn creature with the parts its animation needs, within its triangle budget', () => {
-  const docs = ['creatures.glb','forest-birds.glb'].map(file=>glb(new URL(`../public/assets/models/${file}`, import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')));
+  const docs = ['creatures.glb','forest-birds.glb','dragon.glb'].map(file=>glb(new URL(`../public/assets/models/${file}`, import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')));
   const roots = new Map(docs.flatMap(doc=>doc.scenes[0].nodes.map(i => [doc.nodes[i].name, {root:doc.nodes[i],doc}] as const)));
   // Quantised positions and normals: GLTFLoader reads them without a decoder.
   assert.ok(docs[0].extensionsRequired?.includes('KHR_mesh_quantization'));

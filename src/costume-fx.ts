@@ -12,19 +12,21 @@ export class CostumeFx {
   private free=new Map<string,T.Group[]>();
   private time=0;
   private nextTrail=0;
+  private budget=24;
   private scene:T.Scene;
   private explorerAt:(x:number,z:number)=>T.Object3D|null;
   private ground:(x:number,z:number)=>number;
   private localModel?:()=>T.Object3D;
   constructor(scene:T.Scene,explorerAt:(x:number,z:number)=>T.Object3D|null,ground:(x:number,z:number)=>number,localModel?:()=>T.Object3D){this.scene=scene;this.explorerAt=explorerAt;this.ground=ground;this.localModel=localModel;this.root.name='costume-fx';scene.add(this.root);}
   private prop(kind:string,x:number,z:number,scale:number,life:number,y=0,holder?:T.Object3D){
-    if(this.props.length>=24)return;
+    if(this.props.length>=this.budget)return;
     const spare=this.free.get(kind)?.pop(),model=spare??skillArt.instance(kind);if(!model)return;if(!spare)bakeModel(model);
     model.position.set(x,this.ground(x,z)+y,z);model.rotation.set(0,(x+z)*1.7,0);model.visible=true;this.root.add(model);
     const prop={model,kind,age:0,life,scale,holder};this.props.push(prop);return prop as Prop;
   }
   effect(e:CombatEffect,fx:Effects|null|undefined){
     if(!['flower','roots','hero','heroDive','mountain'].includes(e.look??''))return false;
+    this.budget=Math.max(8,Math.round(24*(fx?.density??1)));
     requestSkillArt();
     const y=this.ground(e.x,e.z),at={x:e.x,y,z:e.z},r=Math.max(.4,e.radius);
     if(e.look==='flower'){
@@ -54,10 +56,10 @@ export class CostumeFx {
     }
     return false;
   }
-  update(dt:number,fx?:Effects|null,flyers:readonly {model:T.Object3D;fairy:boolean;moving:boolean}[]=[]){
+  update(dt:number,fx?:Effects|null,flyers:readonly {model:T.Object3D;fairy:boolean;moving:boolean}[]|(()=>readonly {model:T.Object3D;fairy:boolean;moving:boolean}[])=[]){
     if(this.root.parent!==this.scene)this.scene.add(this.root);
     this.time+=dt;
-    if(this.time>=this.nextTrail){this.nextTrail=this.time+.14;for(const flyer of flyers.slice(0,8))if(flyer.moving)fx?.burst(flyer.model.position,{n:2,color:flyer.fairy?['#ff82bb','#ffd668']:['#89d9ff','#fff1cc'],glow:true,size:.1,speed:.5,up:.5,y:.6,life:.45,gravity:0});}
+    if(this.time>=this.nextTrail){this.nextTrail=this.time+.14;for(const flyer of (typeof flyers==='function'?flyers():flyers).slice(0,Math.max(2,Math.round(8*(fx?.density??1)))))if(flyer.moving)fx?.burst(flyer.model.position,{n:2,color:flyer.fairy?['#ff82bb','#ffd668']:['#89d9ff','#fff1cc'],glow:true,size:.1,speed:.5,up:.5,y:.6,life:.45,gravity:0});}
     for(let i=this.props.length-1;i>=0;i--){const p=this.props[i];p.age+=dt;
       if(p.holder&&p.age<.8){p.holder.updateWorldMatrix(true,false);p.model.position.set(0,2.4,.25).applyMatrix4(p.holder.matrixWorld);}
       if(p.flight!==undefined&&p.age>=.8){

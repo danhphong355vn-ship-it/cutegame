@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import * as T from 'three';
 import {prepareCostume,animateCostume,smoothFlight} from '../src/costume-motion.ts';
 import {addOutlines} from '../src/outline.ts';
+import {readFile} from 'node:fs/promises';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+
+test('the installed superhero GLB keeps both red cape materials together',async()=>{
+  const b=await readFile(new URL('../public/assets/models/disguises.glb',import.meta.url));
+  const scene=(await new GLTFLoader().parseAsync(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength),'')).scene;
+  const model=scene.getObjectByName('dz_superhero')!;assert.ok(model);
+  prepareCostume(model);const hinge=model.getObjectByName('cape-hinge')!;assert.ok(hinge);
+  const cloth=hinge.children as T.Mesh[];assert.equal(cloth.length,2);
+  assert.deepEqual(cloth.map(m=>(m.material as T.MeshStandardMaterial).color.getHexString()).sort(),['b51e36','f0303a']);
+  addOutlines(model,{merge:true});assert.ok(cloth.every(m=>m.userData.noOutline&&m.children.length===0));
+});
 
 test('both red cape surfaces share motion and cannot enter the ink hull',()=>{
   const avatar=new T.Group(),body=new T.Group();avatar.add(body);

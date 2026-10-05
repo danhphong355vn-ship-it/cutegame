@@ -7,6 +7,7 @@ import {KitLibrary} from '../src/assets.ts';
 import {skillArt,mountainArt} from '../src/skill-art.ts';
 import {poseCostume,poseFlight,animateCostume,motionDuration} from '../src/costume-motion.ts';
 import {CostumeFx} from '../src/costume-fx.ts';
+import {Effects} from '../src/fx.ts';
 
 async function load(){const b=await readFile(new URL('../public/assets/models/skill-art.glb',import.meta.url));return (await new GLTFLoader().parseAsync(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength),'')).scene;}
 const limbs=()=>({armL:new T.Group(),armR:new T.Group(),legL:new T.Group(),legR:new T.Group(),head:new T.Group()});
@@ -61,4 +62,15 @@ test('remote mountain leaves its holder after windup, travels visually and disap
   fx.update(.4);assert.equal(fx.root.children.length,1);const model=fx.root.children[0];assert.equal(model.position.x,3);
   fx.update(.5);assert.ok(model.position.z>5);assert.ok(model.rotation.x>0);
   fx.effect({kind:'impact',x:model.position.x,z:model.position.z,radius:4,color:'#fff',look:'mountain' as never},null);fx.update(.01);assert.equal(fx.root.children.length,0);
+});
+
+test('mobile density bounds model draw load and evaluates flight trails only at emission time',()=>{
+  const scene=new T.Scene(),particles=new Effects(scene),fx=new CostumeFx(scene,()=>null,()=>0);
+  particles.density=.45;
+  for(let i=0;i<30;i++)fx.effect({kind:'cast',x:i*5,z:0,radius:2,color:'#fff',look:'hero'},particles);
+  assert.equal(fx.root.children.length,11,'mobile effect models use 11 slots versus 24 at full density');
+  let lists=0;const flyers=()=>{lists++;return [];};
+  for(let i=0;i<60;i++)fx.update(1/60,particles,flyers);
+  assert.ok(lists<=8,`only ${lists} flyer-list builds per second`);
+  fx.clear();
 });

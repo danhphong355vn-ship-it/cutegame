@@ -27,7 +27,7 @@ const compiled = ts.transpileModule(hints.getText(ast) + '\n' + declarations, { 
 let returnHomeCase;
 function findHome(node) { if (ts.isCaseClause(node) && ts.isStringLiteral(node.expression) && node.expression.text === 'return-home') returnHomeCase = node; ts.forEachChild(node, findHome); }
 findHome(ast); assert.ok(returnHomeCase, 'main.ts must expose the actual Home action');
-const compiledHome = ts.transpileModule(`async function returnHomeControl(){${returnHomeCase.statements.filter(s => !ts.isBreakStatement(s)).map(s => s.getText(ast)).join('\n')}}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+const compiledHome = ts.transpileModule(`async function returnHomeControl(){switch('return-home'){case 'return-home': ${returnHomeCase.statements.map(s => s.getText(ast)).join('\n')}}}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 
 function fixture(...items) {
   const state = M.newGame();

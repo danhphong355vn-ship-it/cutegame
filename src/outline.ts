@@ -44,7 +44,7 @@ function outlineMesh(geometry: T.BufferGeometry) {
 /** Meshes that get a hull: solid, drawn, not effects or warning decals. */
 function outlinable(o: T.Object3D): o is T.Mesh {
   if (!(o instanceof T.Mesh) || o instanceof T.InstancedMesh || o instanceof T.SkinnedMesh || o.userData.outline) return false;
-  if (!o.visible || o.layers.mask === 0 || o.name === 'attack-telegraph' || !o.geometry.getAttribute('normal')) return false;
+  if (o.userData.noOutline || !o.visible || o.layers.mask === 0 || o.name === 'attack-telegraph' || !o.geometry.getAttribute('normal')) return false;
   const material = o.material as T.Material;
   return !Array.isArray(o.material) && !material.transparent && material.visible;
 }
