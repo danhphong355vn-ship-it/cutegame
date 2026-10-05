@@ -15,15 +15,20 @@ export const QUALITY: Record<QualityLevel, QualityProfile> = {
   medium: { label: 'Balanced', ratio: 1.25, shadow: 1024, particles: .75, outlines: true },
   high: { label: 'Sharp', ratio: 2, shadow: 2048, particles: 1, outlines: true },
 };
-/** Keep model detail, outlines and atlas/pixel resolution while relieving mobile rendering cost. */
+/** Mobile Auto starts without a shadow pass; keep outlines readable in combat. */
+const MOBILE_BASE: Record<QualityLevel, QualityProfile> = {
+  low: QUALITY.low,
+  medium: { ...QUALITY.medium, shadow: 0 },
+  high: { ...QUALITY.high, ratio: 1.75, shadow: 0, particles: .8 },
+};
 const MOBILE_REDUCED: Record<QualityLevel, QualityProfile> = {
   low: QUALITY.low,
   medium: { ...QUALITY.medium, shadow: 0, particles: .45 },
-  high: { ...QUALITY.high, shadow: 0, particles: .45 },
+  high: { ...MOBILE_BASE.high, particles: .45 },
 };
 export const QUALITY_KEY = 'zoo-garden-graphics';
 /** Old mobile Auto levels were learned before the farm rendering optimizations and Sharp default. */
-export const AUTO_GRAPHICS_VERSION = 2;
+export const AUTO_GRAPHICS_VERSION = 3;
 export interface StoredGraphics { setting?: QualitySetting; autoLevel?: QualityLevel | null; autoVersion?: number }
 
 export interface GraphicsEnvironment { mobile: boolean; devicePixelRatio: number }
@@ -61,7 +66,7 @@ export class GraphicsGovernor {
     if (this.setting !== 'auto') return this.setting;
     return this.autoLevel ?? this.defaultLevel;
   }
-  get profile() { return this.env.mobile && this.setting === 'auto' && this.effectsReduced ? MOBILE_REDUCED[this.level] : QUALITY[this.level]; }
+  get profile() { return this.env.mobile && this.setting === 'auto' ? (this.effectsReduced ? MOBILE_REDUCED : MOBILE_BASE)[this.level] : QUALITY[this.level]; }
   targetRatio() { return Math.min(this.env.devicePixelRatio, this.profile.ratio); }
 
   choose(setting: QualitySetting) {
@@ -91,7 +96,7 @@ export class GraphicsGovernor {
       this.goodSeconds = 0;
       if (++this.slowSeconds < 3) return null;
       this.slowSeconds = 0;
-      if (this.env.mobile && !this.effectsReduced && this.profile.shadow > 0) {
+      if (this.env.mobile && !this.effectsReduced && this.profile.particles > MOBILE_REDUCED[this.level].particles) {
         if (this.upTrial > 0) this.upWait = Math.min(160, this.upWait * 2);
         this.effectsReduced = true; return 'effects';
       }
@@ -110,7 +115,7 @@ export class GraphicsGovernor {
     const up = higher[this.level];
     if (up && this.level !== this.defaultLevel && this.goodSeconds >= this.upWait && this.ratio >= target) { this.setAuto(up); this.goodSeconds = 0; this.upTrial = 20; return 'level'; }
     // Restore expensive decoration only after resolution/level recovered and held steady.
-    if (this.effectsReduced && this.level === this.defaultLevel && this.ratio >= target && this.goodSeconds >= Math.max(20, this.upWait)) {
+    if (this.effectsReduced && this.level !== 'low' && this.ratio >= target && this.goodSeconds >= Math.max(20, this.upWait)) {
       this.effectsReduced = false; this.goodSeconds = 0; this.upTrial = 20; return 'effects';
     }
     return null;
@@ -121,7 +126,7 @@ export class GraphicsGovernor {
 
   toJSON() { return { setting: this.setting, autoLevel: this.kept, autoVersion: AUTO_GRAPHICS_VERSION }; }
 
-  private get defaultLevel(): QualityLevel { return 'high'; }
+  private get defaultLevel(): QualityLevel { return this.env.mobile ? 'medium' : 'high'; }
   private setAuto(level: QualityLevel) { this.autoLevel = level === this.defaultLevel ? null : level; this.heldSeconds = 0; }
 }
 
